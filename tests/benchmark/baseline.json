@@ -1,0 +1,106 @@
+{
+  "version": "1.0.0",
+  "created": "2026-05-26",
+  "description": "基准测试集 - 自动生成",
+  "tolerance": {
+    "total_shots_max_diff": 5,
+    "percentage_max_diff": 0.05,
+    "zero_distance_max": 0,
+    "bad_angle_max": 0,
+    "distance_max_diff_pct": 0.15
+  },
+  "videos": {
+    "shooting_analysis.mp4": {
+      "category": "primary",
+      "resolution": "852x480",
+      "fps": 30.0,
+      "duration_s": 307.9,
+      "expected": {
+        "total_shots": 94,
+        "made_shots": 94,
+        "percentage": 1.0,
+        "avg_distance_m": 7.3,
+        "distance_range": [
+          1.8,
+          11.3
+        ],
+        "zero_distance_count": 0,
+        "bad_angle_count": 0,
+        "type_breakdown": {
+          "three_point": {
+            "min_attempts": 87,
+            "max_attempts": 97
+          },
+          "mid_range": {
+            "min_attempts": 0,
+            "max_attempts": 7
+          }
+        }
+      }
+    },
+    "shooting_training.mp4": {
+      "category": "primary",
+      "resolution": "852x480",
+      "fps": 25.0,
+      "duration_s": 244.8,
+      "expected": {
+        "total_shots": 42,
+        "made_shots": 42,
+        "percentage": 1.0,
+        "avg_distance_m": 3.89,
+        "distance_range": [
+          2.4,
+          7.7
+        ],
+        "zero_distance_count": 0,
+        "bad_angle_count": 0,
+        "type_breakdown": {
+          "three_point": {
+            "min_attempts": 4,
+            "max_attempts": 14
+          },
+          "mid_range": {
+            "min_attempts": 21,
+            "max_attempts": 31
+          },
+          "layup": {
+            "min_attempts": 2,
+            "max_attempts": 12
+          }
+        }
+      }
+    },
+    "test.f100023.mp4": {
+      "category": "primary",
+      "resolution": "852x480",
+      "fps": 25.0,
+      "duration_s": 212.3,
+      "expected": {
+        "total_shots": 15,
+        "made_shots": 15,
+        "percentage": 1.0,
+        "avg_distance_m": 2.62,
+        "distance_range": [
+          1.8,
+          8.2
+        ],
+        "zero_distance_count": 0,
+        "bad_angle_count": 0,
+        "type_breakdown": {
+          "three_point": {
+            "min_attempts": 0,
+            "max_attempts": 6
+          },
+          "mid_range": {
+            "min_attempts": 5,
+            "max_attempts": 15
+          },
+          "layup": {
+            "min_attempts": 0,
+            "max_attempts": 9
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FF6B35"/>
+      <stop offset="100%" stop-color="#F7C948"/>
+    </linearGradient>
+    <linearGradient id="ball" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#E85D26"/>
+      <stop offset="50%" stop-color="#D44B1C"/>
+      <stop offset="100%" stop-color="#B83A12"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+
+  <!-- Background circle -->
+  <circle cx="64" cy="64" r="62" fill="url(#bg)" filter="url(#shadow)"/>
+
+  <!-- Basketball -->
+  <circle cx="64" cy="52" r="28" fill="url(#ball)" stroke="#8B2500" stroke-width="1.5"/>
+
+  <!-- Ball seams -->
+  <path d="M 36 52 Q 64 38 92 52" fill="none" stroke="#8B2500" stroke-width="1.5" stroke-linecap="round"/>
+  <path d="M 36 52 Q 64 66 92 52" fill="none" stroke="#8B2500" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="64" y1="24" x2="64" y2="80" stroke="#8B2500" stroke-width="1.5" stroke-linecap="round"/>
+
+  <!-- Trajectory arc (shot path) -->
+  <path d="M 28 78 Q 48 20 64 48 Q 72 62 96 72" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="4 3" opacity="0.9"/>
+
+  <!-- Rim -->
+  <ellipse cx="90" cy="72" rx="12" ry="4" fill="none" stroke="#fff" stroke-width="2.5" opacity="0.9"/>
+
+  <!-- Net lines -->
+  <line x1="82" y1="76" x2="84" y2="88" stroke="#fff" stroke-width="1" opacity="0.6" stroke-linecap="round"/>
+  <line x1="90" y1="76" x2="90" y2="90" stroke="#fff" stroke-width="1" opacity="0.6" stroke-linecap="round"/>
+  <line x1="98" y1="76" x2="96" y2="88" stroke="#fff" stroke-width="1" opacity="0.6" stroke-linecap="round"/>
+
+  <!-- Data crosshair overlay -->
+  <circle cx="64" cy="52" r="32" fill="none" stroke="#fff" stroke-width="0.8" opacity="0.3" stroke-dasharray="2 4"/>
+  <line x1="64" y1="16" x2="64" y2="28" stroke="#fff" stroke-width="1" opacity="0.5" stroke-linecap="round"/>
+  <line x1="64" y1="76" x2="64" y2="88" stroke="#fff" stroke-width="1" opacity="0.5" stroke-linecap="round"/>
+  <line x1="28" y1="52" x2="40" y2="52" stroke="#fff" stroke-width="1" opacity="0.5" stroke-linecap="round"/>
+  <line x1="88" y1="52" x2="100" y2="52" stroke="#fff" stroke-width="1" opacity="0.5" stroke-linecap="round"/>
+
+  <!-- Corner brackets (analysis frame) -->
+  <path d="M 18 18 L 18 28 M 18 18 L 28 18" fill="none" stroke="#fff" stroke-width="2" opacity="0.5" stroke-linecap="round"/>
+  <path d="M 110 18 L 110 28 M 110 18 L 100 18" fill="none" stroke="#fff" stroke-width="2" opacity="0.5" stroke-linecap="round"/>
+  <path d="M 18 110 L 18 100 M 18 110 L 28 110" fill="none" stroke="#fff" stroke-width="2" opacity="0.5" stroke-linecap="round"/>
+  <path d="M 110 110 L 110 100 M 110 110 L 100 110" fill="none" stroke="#fff" stroke-width="2" opacity="0.5" stroke-linecap="round"/>
+</svg>

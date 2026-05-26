@@ -1,0 +1,54 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+.venv/
+venv/
+env/
+.pytest_cache/
+
+# Node
+node_modules/
+frontend/dist/
+.npm
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ML Models (large files)
+*.pt
+*.onnx
+*.weights
+
+# Data (uploads, outputs, debug artifacts)
+data/uploads/
+data/output/
+data/videos/
+data/samples/*.mp4
+data/samples/*.m4a
+data/samples/*.avi
+data/samples/*.mov
+tests/benchmark/videos/
+backend/debug_frame*.jpg
+backend/debug_frame*.png
+backend/shot_frame*.jpg
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+
+# Environment
+.env
+.env.local

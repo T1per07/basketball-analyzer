@@ -1,0 +1,18 @@
+# 核心依赖
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart>=0.0.6
+
+# 计算机视觉
+supervision>=0.22.0
+ultralytics>=8.3.0
+opencv-python>=4.8.0
+
+# 数据处理
+numpy>=1.24.0
+scipy>=1.11.0
+pandas>=2.0.0
+
+# 异步支持
+aiofiles>=23.0.0
+websockets>=12.0
