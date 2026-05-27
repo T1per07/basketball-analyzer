@@ -21,6 +21,11 @@ export interface AnalysisResult {
     min_release_angle: number
     max_release_angle: number
   }
+  kinematics?: {
+    avg_speed: number
+    avg_flight_time: number
+    avg_arc_height: number
+  }
   shot_locations: ShotLocation[]
   shots: ShotDetail[]
   annotated_video?: string
@@ -56,4 +61,7 @@ export interface ShotDetail {
   entry_angle: number
   confidence?: number
   trajectory_points?: [number, number][]
+  flight_time?: number
+  shot_speed?: number
+  arc_height?: number
 }

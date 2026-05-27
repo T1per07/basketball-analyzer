@@ -3,6 +3,7 @@ import uuid
 import asyncio
 import json
 import base64
+import io
 import logging
 import time
 from pathlib import Path
@@ -12,13 +13,14 @@ import cv2
 import numpy as np
 from fastapi import FastAPI, UploadFile, File, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from services.video_processor import VideoProcessor
 from services.stats_calculator import StatsCalculator
 from services.realtime_service import RealtimeAnalyzer
 from config.settings import config
+from utils.logger import performance_monitor
 
 logger = logging.getLogger(__name__)
 
@@ -140,7 +142,7 @@ async def _process_video(task_id: str, video_path: str):
                 image_height=video_info.height,
             )
 
-            # 添加投篮详情（转为原生 Python 类型避免 numpy 序列化问题）
+            # 添加投篮详情（含运动学参数）
             full_stats["shots"] = [
                 {
                     "shot_id": int(s.shot_id),
@@ -151,9 +153,19 @@ async def _process_video(task_id: str, video_path: str):
                     "entry_angle": float(s.entry_angle),
                     "confidence": float(s.confidence),
                     "frame": int(s.frame_end),
+                    "flight_time": float(s.flight_time),
+                    "shot_speed": float(s.shot_speed),
+                    "arc_height": float(s.arc_height),
                 }
                 for s in result.shots
             ]
+
+            # 运动学汇总
+            full_stats["kinematics"] = {
+                "avg_speed": round(result.average_speed, 2),
+                "avg_flight_time": round(result.average_flight_time, 3),
+                "avg_arc_height": round(result.average_arc_height, 2),
+            }
 
             # 生成标注视频（60fps）
             output_dir = config.output_dir
@@ -231,6 +243,210 @@ async def get_video(task_id: str):
 @app.get("/api/v1/health")
 async def health():
     return {"status": "ok"}
+
+
+@app.get("/api/v1/metrics")
+async def metrics():
+    """获取性能监控指标"""
+    return {
+        "status": "ok",
+        "metrics": performance_monitor.get_all_stats(),
+        "active_tasks": len([t for t in tasks.values() if t.status == "processing"]),
+        "total_tasks": len(tasks),
+    }
+
+
+@app.get("/api/v1/export/excel/{task_id}")
+async def export_excel(task_id: str):
+    """导出 Excel 报告"""
+    if task_id not in tasks or tasks[task_id].status != "completed":
+        raise HTTPException(404, "Result not found")
+
+    result = tasks[task_id].result
+    shots = result.get("shots", [])
+    summary = result.get("summary", {})
+    by_type = result.get("by_type", {})
+    kinematics = result.get("kinematics", {})
+
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    except ImportError:
+        raise HTTPException(500, "openpyxl not installed. Run: pip install openpyxl")
+
+    wb = Workbook()
+
+    # Summary sheet
+    ws = wb.active
+    ws.title = "Summary"
+    header_font = Font(bold=True, size=12)
+    header_fill = PatternFill(start_color="FF6B2B", end_color="FF6B2B", fill_type="solid")
+    header_font_white = Font(bold=True, size=11, color="FFFFFF")
+
+    ws.append(["Basketball Shot Analysis Report"])
+    ws["A1"].font = Font(bold=True, size=14)
+    ws.append([])
+
+    for label, key in [("Total Shots", "total_shots"), ("Made", "made_shots"),
+                       ("FG%", "overall_percentage"), ("Avg Distance (m)", "average_distance"),
+                       ("Video Duration (s)", "video_duration")]:
+        val = summary.get(key, 0)
+        if key == "overall_percentage":
+            val = f"{val:.1%}"
+        elif isinstance(val, float):
+            val = round(val, 2)
+        ws.append([label, val])
+
+    if kinematics:
+        ws.append([])
+        ws.append(["Kinematics"])
+        ws["A" + str(ws.max_row)].font = header_font
+        for label, key in [("Avg Speed (m/s)", "avg_speed"),
+                           ("Avg Flight Time (s)", "avg_flight_time"),
+                           ("Avg Arc Height (m)", "avg_arc_height")]:
+            ws.append([label, kinematics.get(key, 0)])
+
+    # By Type sheet
+    ws2 = wb.create_sheet("By Type")
+    ws2.append(["Type", "Attempts", "Made", "FG%", "Avg Distance"])
+    for cell in ws2[1]:
+        cell.font = header_font_white
+        cell.fill = header_fill
+    for t, s in by_type.items():
+        ws2.append([t, s["attempts"], s["made"], f"{s['percentage']:.1%}", round(s["avg_distance"], 2)])
+
+    # Shots sheet
+    ws3 = wb.create_sheet("All Shots")
+    headers = ["ID", "Type", "Made", "Distance (m)", "Release Angle", "Entry Angle",
+               "Speed (m/s)", "Flight Time (s)", "Arc Height (m)", "Confidence"]
+    ws3.append(headers)
+    for cell in ws3[1]:
+        cell.font = header_font_white
+        cell.fill = header_fill
+    for s in shots:
+        ws3.append([
+            s["shot_id"], s["shot_type"], "Yes" if s["made"] else "No",
+            round(s["distance"], 2), round(s["release_angle"], 1),
+            round(s["entry_angle"], 1), round(s.get("shot_speed", 0), 2),
+            round(s.get("flight_time", 0), 3), round(s.get("arc_height", 0), 2),
+            round(s["confidence"], 2),
+        ])
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename=shot_analysis_{task_id}.xlsx"},
+    )
+
+
+@app.get("/api/v1/export/pdf/{task_id}")
+async def export_pdf(task_id: str):
+    """导出 PDF 报告"""
+    if task_id not in tasks or tasks[task_id].status != "completed":
+        raise HTTPException(404, "Result not found")
+
+    result = tasks[task_id].result
+    shots = result.get("shots", [])
+    summary = result.get("summary", {})
+    by_type = result.get("by_type", {})
+    kinematics = result.get("kinematics", {})
+
+    try:
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib import colors
+        from reportlab.lib.units import mm
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    except ImportError:
+        raise HTTPException(500, "reportlab not installed. Run: pip install reportlab")
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=20 * mm, bottomMargin=20 * mm)
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle("Title2", parent=styles["Title"], fontSize=18, spaceAfter=12)
+    subtitle_style = ParagraphStyle("Sub", parent=styles["Heading2"], fontSize=13, spaceBefore=8, spaceAfter=6)
+
+    elements = []
+
+    elements.append(Paragraph("Basketball Shot Analysis Report", title_style))
+    elements.append(Spacer(1, 6 * mm))
+
+    # Summary table
+    elements.append(Paragraph("Summary", subtitle_style))
+    summary_data = [
+        ["Metric", "Value"],
+        ["Total Shots", str(summary.get("total_shots", 0))],
+        ["Made", str(summary.get("made_shots", 0))],
+        ["FG%", f"{summary.get('overall_percentage', 0):.1%}"],
+        ["Avg Distance", f"{summary.get('average_distance', 0):.2f} m"],
+    ]
+    if kinematics:
+        summary_data.extend([
+            ["Avg Speed", f"{kinematics.get('avg_speed', 0):.2f} m/s"],
+            ["Avg Flight Time", f"{kinematics.get('avg_flight_time', 0):.3f} s"],
+            ["Avg Arc Height", f"{kinematics.get('avg_arc_height', 0):.2f} m"],
+        ])
+
+    t = Table(summary_data, colWidths=[120, 100])
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#FF6B2B")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTSIZE", (0, 0), (-1, -1), 10),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F5F5F5")]),
+    ]))
+    elements.append(t)
+    elements.append(Spacer(1, 6 * mm))
+
+    # By type
+    if by_type:
+        elements.append(Paragraph("Shot Types", subtitle_style))
+        type_data = [["Type", "Attempts", "Made", "FG%", "Avg Dist (m)"]]
+        for name, s in by_type.items():
+            type_data.append([name, str(s["attempts"]), str(s["made"]),
+                              f"{s['percentage']:.1%}", f"{s['avg_distance']:.2f}"])
+        t2 = Table(type_data, colWidths=[80, 60, 50, 50, 80])
+        t2.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#333")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("FONTSIZE", (0, 0), (-1, -1), 9),
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+        ]))
+        elements.append(t2)
+        elements.append(Spacer(1, 6 * mm))
+
+    # Shots table (first 50)
+    elements.append(Paragraph("Shot Details (first 50)", subtitle_style))
+    shot_data = [["#", "Type", "Made", "Dist", "Angle", "Speed", "Flight", "Arc"]]
+    for s in shots[:50]:
+        shot_data.append([
+            str(s["shot_id"]), s["shot_type"], "Y" if s["made"] else "N",
+            f"{s['distance']:.1f}", f"{s['release_angle']:.0f}°",
+            f"{s.get('shot_speed', 0):.1f}", f"{s.get('flight_time', 0):.2f}s",
+            f"{s.get('arc_height', 0):.1f}m",
+        ])
+    t3 = Table(shot_data, colWidths=[25, 60, 35, 40, 45, 45, 45, 45])
+    t3.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1a1a2e")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTSIZE", (0, 0), (-1, -1), 8),
+        ("GRID", (0, 0), (-1, -1), 0.3, colors.grey),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8f8f8")]),
+    ]))
+    elements.append(t3)
+
+    doc.build(elements)
+    buf.seek(0)
+
+    return StreamingResponse(
+        buf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename=shot_analysis_{task_id}.pdf"},
+    )
 
 
 @app.websocket("/ws/realtime")

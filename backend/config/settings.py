@@ -87,7 +87,7 @@ class ShotDetectionConfig:
 @dataclass(frozen=True)
 class VideoProcessingConfig:
     """视频处理配置（原为散落的魔法数字）"""
-    target_process_fps: int = 15               # 分析时的目标帧率
+    target_process_fps: int = 30               # 分析时的目标帧率（优化后提升至 30）
     output_fps: float = 60.0                   # 标注视频输出帧率
     flash_frames: int = 25                     # 投篮命中/失误特效帧数
     # UP zone 倍率（相对于篮筐宽高）

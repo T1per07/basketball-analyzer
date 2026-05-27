@@ -23,6 +23,9 @@ class TrajectoryParams:
     fit_r_squared: float
     parabola_coefficients: tuple
     estimated_distance: float
+    flight_time: float = 0.0      # 飞行时间（秒）
+    shot_speed: float = 0.0       # 出手速度（m/s）
+    arc_height: float = 0.0       # 弧线高度（米）
 
 
 def parabola(x: np.ndarray, a: float, b: float, c: float) -> np.ndarray:
@@ -30,16 +33,16 @@ def parabola(x: np.ndarray, a: float, b: float, c: float) -> np.ndarray:
 
 
 class TrajectoryAnalyzer:
-    """轨迹分析器"""
+    """轨迹分析器 — 含运动学参数计算"""
 
     def __init__(self):
         self.ball_properties = config.ball
         self.court = config.court
-        # 篮筐参考信息（用于距离估算）
         self._hoop_pixel_width: float = 0.0
         self._hoop_position: tuple[float, float] | None = None
         self._hoop_width_history: list[float] = []
         self._frame_width: int = config.trajectory.default_frame_width
+        self._fps: float = 30.0
 
     def update_hoop_reference(self, hoop_position: tuple[float, float] | None, hoop_pixel_width: float):
         """更新篮筐参考信息（用于距离估算）"""
@@ -53,6 +56,9 @@ class TrajectoryAnalyzer:
     def set_frame_width(self, width: int):
         """设置视频帧宽度（用于焦距估算）"""
         self._frame_width = width
+
+    def set_fps(self, fps: float):
+        self._fps = fps
 
     def fit_trajectory(self, track: BallTrack) -> TrajectoryParams | None:
         """拟合篮球抛物线轨迹"""
@@ -101,6 +107,35 @@ class TrajectoryAnalyzer:
 
             estimated_distance = self._estimate_distance(track)
 
+            # 运动学参数
+            n_points = len(track.points)
+            flight_time = n_points / self._fps if self._fps > 0 else 0.0
+
+            # 出手速度：从抛物线初速度估算
+            # v₀ = √(v₀ₓ² + v₀ᵧ²)
+            # v₀ₓ 水平速度 ≈ 水平距离 / 飞行时间
+            # v₀ᵧ 垂直速度 从出手角度推算
+            shot_speed = 0.0
+            if flight_time > 0 and estimated_distance > 0:
+                v_horizontal = estimated_distance / flight_time
+                release_rad = math.radians(abs(release_angle))
+                if math.tan(release_rad) > 0:
+                    v_vertical = v_horizontal * math.tan(release_rad)
+                    shot_speed = math.sqrt(v_horizontal**2 + v_vertical**2)
+                else:
+                    shot_speed = v_horizontal
+
+            # 弧线高度（像素→米）
+            release_y = y_smooth[0]
+            arc_height_px = abs(release_y - apex_y)
+            # 用球像素大小做尺度转换
+            ball_px = self._estimate_ball_pixel_size(track)
+            if ball_px > 5:
+                meters_per_px = self.ball_properties.real_diameter / ball_px
+                arc_height = arc_height_px * meters_per_px
+            else:
+                arc_height = arc_height_px * config.trajectory.pixel_to_meter_fallback
+
             return TrajectoryParams(
                 apex_x=apex_x,
                 apex_y=apex_y,
@@ -110,6 +145,9 @@ class TrajectoryAnalyzer:
                 fit_r_squared=r_squared,
                 parabola_coefficients=(a, b, c),
                 estimated_distance=estimated_distance,
+                flight_time=round(flight_time, 3),
+                shot_speed=round(shot_speed, 2),
+                arc_height=round(arc_height, 2),
             )
 
         except (RuntimeError, ValueError):

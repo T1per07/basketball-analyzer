@@ -1,5 +1,7 @@
-"""视频处理服务 - 使用 Supervision Annotator 标注"""
+"""视频处理服务 — 线程化读帧 + Supervision 标注"""
 import time
+import threading
+import queue
 from pathlib import Path
 from dataclasses import dataclass
 
@@ -7,8 +9,9 @@ import cv2
 import numpy as np
 import supervision as sv
 
-from services.shot_analyzer import ShotAnalyzer, AnalysisResult
+from services.optimized_shot_analyzer import OptimizedShotAnalyzer as ShotAnalyzer, AnalysisResult
 from config.settings import config
+from utils.logger import logger, performance_monitor
 
 
 @dataclass
@@ -31,8 +34,42 @@ GOLD = sv.Color(255, 215, 0)
 RED = sv.Color(255, 60, 60)
 
 
+class _ThreadedReader:
+    """后台线程读帧，与推理重叠 I/O"""
+
+    def __init__(self, path: str, queue_size: int = 128):
+        self._cap = cv2.VideoCapture(path)
+        self._q: queue.Queue = queue.Queue(maxsize=queue_size)
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def _run(self):
+        idx = 0
+        while not self._stop.is_set():
+            ret, frame = self._cap.read()
+            if not ret:
+                self._q.put(None)
+                break
+            self._q.put((idx, frame))
+            idx += 1
+
+    def __iter__(self):
+        return self
+
+    def __next__(self) -> tuple[int, np.ndarray] | None:
+        item = self._q.get()
+        if item is None:
+            raise StopIteration
+        return item
+
+    def release(self):
+        self._stop.set()
+        self._cap.release()
+
+
 class VideoProcessor:
-    """视频处理器 - Supervision 标注版"""
+    """视频处理器 — 线程化读帧 + Supervision 标注"""
 
     def __init__(self, fps: float = 30.0):
         self.analyzer = ShotAnalyzer(fps=fps)
@@ -82,35 +119,40 @@ class VideoProcessor:
     ) -> AnalysisResult:
         video_info = self.get_video_info(video_path)
         self.analyzer.trajectory_analyzer.set_frame_width(video_info.width)
+        self.analyzer.trajectory_analyzer.set_fps(video_info.fps)
         self.analyzer.shot_detector.set_fps(video_info.fps)
 
-        target_process_fps = config.video.target_process_fps
-        skip = max(1, int(video_info.fps / target_process_fps))
+        skip = max(1, int(video_info.fps / config.video.target_process_fps))
 
-        cap = cv2.VideoCapture(video_path)
+        logger.info("开始分析视频", path=video_path, width=video_info.width,
+                     height=video_info.height, fps=video_info.fps, skip=skip)
+
+        reader = _ThreadedReader(video_path)
         frame_index = 0
         processed = 0
         start_time = time.time()
 
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                break
-
-            if frame_index % skip == 0:
-                self.analyzer.process_frame(frame, frame_index)
+        for idx, frame in reader:
+            frame_index = idx
+            if idx % skip == 0:
+                with performance_monitor.measure("process_frame"):
+                    self.analyzer.process_frame(frame, idx)
                 processed += 1
 
-            frame_index += 1
+            if progress_callback and idx % 100 == 0:
+                progress_callback(idx, video_info.total_frames)
 
-            if progress_callback and frame_index % 100 == 0:
-                progress_callback(frame_index, video_info.total_frames)
-
-        cap.release()
+        reader.release()
 
         elapsed = time.time() - start_time
         fps_actual = processed / elapsed if elapsed > 0 else 0
-        print(f"处理完成: {processed} 帧 / {frame_index} 总帧, 耗时 {elapsed:.1f}s, {fps_actual:.1f} FPS")
+
+        logger.info("视频分析完成", processed=processed, total_frames=frame_index,
+                     elapsed=round(elapsed, 1), fps=round(fps_actual, 1))
+
+        stats = performance_monitor.get_stats("process_frame")
+        if stats:
+            logger.info("帧处理性能统计", **stats)
 
         return self.analyzer.build_result(frame_index, video_info.fps)
 

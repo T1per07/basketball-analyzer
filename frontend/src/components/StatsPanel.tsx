@@ -1,4 +1,4 @@
-import { RotateCcw, Download, TrendingUp, Target, Crosshair, Ruler, Flame, Trophy, Zap } from 'lucide-react'
+import { RotateCcw, Download, TrendingUp, Target, Crosshair, Ruler, Flame, Trophy, Zap, Gauge, Timer, ArrowUpRight, FileSpreadsheet, FileText } from 'lucide-react'
 import ShotChart from './ShotChart'
 import ZoneHeatmap from './ZoneHeatmap'
 import DistanceChart from './DistanceChart'
@@ -12,7 +12,7 @@ interface StatsPanelProps {
 }
 
 export default function StatsPanel({ result, onReset }: StatsPanelProps) {
-  const { summary, by_type, by_zone, distance_distribution, streaks, angles, shots, annotated_video } = result
+  const { summary, by_type, by_zone, distance_distribution, streaks, angles, shots, annotated_video, kinematics } = result
 
   const threePtMade = by_type?.three_point?.made ?? 0
   const twoPtMade = (summary.made_shots - threePtMade)
@@ -34,7 +34,7 @@ export default function StatsPanel({ result, onReset }: StatsPanelProps) {
             {summary.total_shots} shots detected in {summary.video_duration?.toFixed(0) || '—'}s video
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <button onClick={onReset} className="btn btn-ghost flex items-center gap-2 text-xs">
             <RotateCcw size={14} />
             New Video
@@ -42,8 +42,22 @@ export default function StatsPanel({ result, onReset }: StatsPanelProps) {
           {annotated_video && (
             <a href={annotated_video} download className="btn btn-secondary flex items-center gap-2 text-xs">
               <Download size={14} />
-              Download
+              Video
             </a>
+          )}
+          {result.task_id && (
+            <>
+              <a href={`/api/v1/export/excel/${result.task_id}`} className="btn btn-ghost flex items-center gap-2 text-xs"
+                style={{ color: 'var(--neon-green)' }}>
+                <FileSpreadsheet size={14} />
+                Excel
+              </a>
+              <a href={`/api/v1/export/pdf/${result.task_id}`} className="btn btn-ghost flex items-center gap-2 text-xs"
+                style={{ color: 'var(--neon-pink)' }}>
+                <FileText size={14} />
+                PDF
+              </a>
+            </>
           )}
         </div>
       </div>
@@ -105,6 +119,33 @@ export default function StatsPanel({ result, onReset }: StatsPanelProps) {
           color="var(--text-secondary)"
         />
       </section>
+
+      {/* Kinematics */}
+      {kinematics && kinematics.avg_speed > 0 && (
+        <section className="grid grid-cols-3 gap-3 stagger-children">
+          <StatCard
+            label="Avg Shot Speed"
+            value={kinematics.avg_speed.toFixed(1)}
+            suffix="m/s"
+            color="var(--neon-cyan)"
+            icon={<Gauge className="w-4 h-4" />}
+          />
+          <StatCard
+            label="Avg Flight Time"
+            value={kinematics.avg_flight_time.toFixed(2)}
+            suffix="s"
+            color="var(--neon-green)"
+            icon={<Timer className="w-4 h-4" />}
+          />
+          <StatCard
+            label="Avg Arc Height"
+            value={kinematics.avg_arc_height.toFixed(2)}
+            suffix="m"
+            color="var(--neon-pink)"
+            icon={<ArrowUpRight className="w-4 h-4" />}
+          />
+        </section>
+      )}
 
       {/* Streaks */}
       {streaks && (
@@ -242,14 +283,14 @@ function AngleGauge({ value }: { value: number }) {
   )
 }
 
-function ShotDetailsTable({ shots }: { shots: { shot_id: number; shot_type: string; made: boolean; distance: number; release_angle: number; entry_angle?: number; confidence?: number }[] }) {
+function ShotDetailsTable({ shots }: { shots: { shot_id: number; shot_type: string; made: boolean; distance: number; release_angle: number; entry_angle?: number; confidence?: number; shot_speed?: number; flight_time?: number; arc_height?: number }[] }) {
 
   return (
     <div className="overflow-x-auto">
       <table className="w-full">
         <thead>
           <tr style={{ borderBottom: '1px solid rgba(249, 115, 22, 0.08)' }}>
-            {['#', 'Type', 'Result', 'Dist', 'Angle', 'Entry', 'Conf'].map(h => (
+            {['#', 'Type', 'Result', 'Dist', 'Angle', 'Speed', 'Flight', 'Arc'].map(h => (
               <th key={h} className="text-left py-3 px-3 text-[0.55rem] font-bold tracking-[0.12em] uppercase"
                 style={{ color: 'var(--text-muted)' }}>{h}</th>
             ))}
@@ -289,11 +330,14 @@ function ShotDetailsTable({ shots }: { shots: { shot_id: number; shot_type: stri
               <td className="py-2.5 px-3 text-mono text-xs" style={{ color: 'var(--text-primary)' }}>
                 {shot.release_angle.toFixed(1)}<span style={{ color: 'var(--text-muted)' }}>&deg;</span>
               </td>
-              <td className="py-2.5 px-3 text-mono text-xs" style={{ color: 'var(--orange-400)' }}>
-                {shot.entry_angle?.toFixed(1) || '—'}<span style={{ color: 'var(--text-muted)' }}>&deg;</span>
+              <td className="py-2.5 px-3 text-mono text-xs" style={{ color: 'var(--neon-green)' }}>
+                {shot.shot_speed?.toFixed(1) || '—'}<span style={{ color: 'var(--text-muted)' }}>m/s</span>
               </td>
-              <td className="py-2.5 px-3">
-                <ConfidenceBar value={shot.confidence ?? 0} />
+              <td className="py-2.5 px-3 text-mono text-xs" style={{ color: 'var(--orange-400)' }}>
+                {shot.flight_time?.toFixed(2) || '—'}<span style={{ color: 'var(--text-muted)' }}>s</span>
+              </td>
+              <td className="py-2.5 px-3 text-mono text-xs" style={{ color: 'var(--neon-pink)' }}>
+                {shot.arc_height?.toFixed(2) || '—'}<span style={{ color: 'var(--text-muted)' }}>m</span>
               </td>
             </tr>
           ))}
@@ -311,15 +355,3 @@ function ShotDetailsTable({ shots }: { shots: { shot_id: number; shot_type: stri
   )
 }
 
-function ConfidenceBar({ value }: { value: number }) {
-  const pct = Math.round(value * 100)
-  const color = pct >= 70 ? 'var(--neon-green)' : pct >= 40 ? 'var(--neon-gold)' : 'var(--neon-pink)'
-  return (
-    <div className="flex items-center gap-2">
-      <div className="w-12 h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--surface-raised)' }}>
-        <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: color }} />
-      </div>
-      <span className="text-mono text-[0.55rem]" style={{ color: 'var(--text-muted)' }}>{pct}%</span>
-    </div>
-  )
-}
