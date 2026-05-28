@@ -44,13 +44,20 @@ class ShotAnalyzer {
       );
     }
 
-    // 提取球位置数据
+    // 提取球位置数据 — 每帧只保留最佳候选
     final ballPositions = <(double, double)>[];
     final ballSizes = <double>[];
     final ballConfs = <double>[];
 
-    for (final det in ballDetections) {
-      final (x1, y1, x2, y2, conf) = det;
+    if (ballDetections.isNotEmpty) {
+      // 选择面积最大的检测（篮球通常是最大的橙色区域）
+      var best = ballDetections.first;
+      for (final det in ballDetections.skip(1)) {
+        final bestArea = (best.$3 - best.$1) * (best.$4 - best.$2);
+        final detArea = (det.$3 - det.$1) * (det.$4 - det.$2);
+        if (detArea > bestArea) best = det;
+      }
+      final (x1, y1, x2, y2, conf) = best;
       final cx = (x1 + x2) / 2;
       final cy = (y1 + y2) / 2;
       final area = (x2 - x1) * (y2 - y1);
