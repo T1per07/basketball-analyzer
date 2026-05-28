@@ -59,10 +59,10 @@ class TrajectoryAnalyzer {
 
       final coeffs = _polyfit(xNorm, ySmooth, 2);
       if (coeffs.length < 3) return null;
-      // 转换回原始坐标系
-      final a = xStd > 0 ? coeffs[0] / (xStd * xStd) : coeffs[0];
+      // 转换回原始坐标系: y = c0 + c1*xNorm + c2*xNorm² → y = a*x² + b*x + c
+      final a = xStd > 0 ? coeffs[2] / (xStd * xStd) : coeffs[2];
       final b = xStd > 0 ? coeffs[1] / xStd - 2 * a * xMean : coeffs[1];
-      final c = coeffs[2] - coeffs[1] * (xStd > 0 ? xMean / xStd : xMean) + a * xMean * xMean;
+      final c = coeffs[0] - coeffs[1] * (xStd > 0 ? xMean / xStd : xMean) + a * xMean * xMean;
 
       // R² 计算
       final yPred = x.map((xi) => a * xi * xi + b * xi + c).toList();
@@ -76,17 +76,17 @@ class TrajectoryAnalyzer {
 
       if (rSquared < AppConfig.shot.trajectoryRSquaredThreshold) return null;
 
-      // 出手角度
+      // 出手角度（与水平面的夹角，取绝对值）
       final xStart = x[0];
       final slopeStart = 2 * a * xStart + b;
-      final releaseAngle = atan(-slopeStart) * 180 / pi;
+      final releaseAngle = (atan(slopeStart)).abs() * 180 / pi;
 
-      // 入射角度
+      // 入射角度（与水平面的夹角，取绝对值）
       double entryAngle = 0.0;
       if (apexIdx < x.length - 1) {
         final xEnd = x.last;
         final slopeEnd = 2 * a * xEnd + b;
-        entryAngle = atan(-slopeEnd) * 180 / pi;
+        entryAngle = (atan(slopeEnd)).abs() * 180 / pi;
       }
 
       final estimatedDistance = estimateDistance(track);

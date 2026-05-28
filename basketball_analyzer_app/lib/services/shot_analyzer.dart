@@ -127,9 +127,9 @@ class ShotAnalyzer {
         }
       }
 
-      // 角度合理性校验
-      if (releaseAngle > 75 || releaseAngle < 15) releaseAngle = 0.0;
-      if (entryAngle > 80 || entryAngle < 10) entryAngle = 0.0;
+      // 角度合理性校验（宽范围，避免误过滤）
+      if (releaseAngle > 85 || releaseAngle < 5) releaseAngle = 0.0;
+      if (entryAngle > 85 || entryAngle < 5) entryAngle = 0.0;
 
       final trajPoints =
           track.points.map((p) => (p.x, p.y)).toList();

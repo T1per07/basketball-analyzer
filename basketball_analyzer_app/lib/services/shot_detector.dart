@@ -406,10 +406,10 @@ class ShotDetector {
   }
 
   /// 检查球是否在 apex 后消失在篮筐附近 — 强命中信号
-  /// 当球在上升后消失在篮筐区域，极可能穿过篮筐
+  /// 当球在下降阶段消失在篮筐区域，极可能穿过篮筐
   bool _ballLostNearHoopAfterApex(
       double hcx, double hcy, double hw, double hh) {
-    if (_trajectoryBuffer.length < 3) return false;
+    if (_trajectoryBuffer.length < 5) return false;
 
     // 球的真实检测已丢失
     bool lost = _frameCount - _lastRealDetectionFrame > 3;
@@ -423,7 +423,25 @@ class ShotDetector {
     // 在 apex 之后
     bool afterApex = _frameCount - _apexFrame > (_fps * 0.2).round();
 
-    return nearHoop && afterApex;
+    // 球已在下降阶段（y 增大）— 找 apex 后的最低点
+    double minY = double.infinity;
+    int minIdx = 0;
+    for (int i = 0; i < _trajectoryBuffer.length; i++) {
+      if (_trajectoryBuffer[i].$2 < minY) {
+        minY = _trajectoryBuffer[i].$2;
+        minIdx = i;
+      }
+    }
+    // 检查 apex 后是否有下降（y > apex y）
+    bool wasDescending = false;
+    for (int i = minIdx + 1; i < _trajectoryBuffer.length; i++) {
+      if (_trajectoryBuffer[i].$2 - minY > 5) {
+        wasDescending = true;
+        break;
+      }
+    }
+
+    return nearHoop && afterApex && wasDescending;
   }
 
   // ===== 角度计算 =====
@@ -448,8 +466,8 @@ class ShotDetector {
 
       final coeffs = _polyfit(xNorm, ys, 2);
       if (coeffs.length >= 3) {
-        // 转换回原始坐标系
-        final a = xStd > 0 ? coeffs[0] / (xStd * xStd) : coeffs[0];
+        // 转换回原始坐标系: y = c0 + c1*xNorm + c2*xNorm² → y = a*x² + b*x + c
+        final a = xStd > 0 ? coeffs[2] / (xStd * xStd) : coeffs[2];
         final b = xStd > 0
             ? coeffs[1] / xStd - 2 * a * xMean
             : coeffs[1];
