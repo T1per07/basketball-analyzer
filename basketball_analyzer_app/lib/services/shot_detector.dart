@@ -147,22 +147,25 @@ class ShotDetector {
     final (bx, by, _, _, _, _) = _ballPos.last;
     final (hcx, hcy, _, hw, hh, _) = _hoopPos.last;
 
+    // 球在篮筐上方区域
     final x1 = hcx - 8 * hw;
     final x2 = hcx + 8 * hw;
-    final y1 = hcy - 3 * hh;
-    final y2 = hcy - 0.3 * hh;
+    final y1 = hcy - 4 * hh;
+    final y2 = hcy + 0.3 * hh;
 
     return x1 < bx && bx < x2 && y1 < by && by < y2;
   }
 
   bool _detectDown() {
-    if (_ballPos.isEmpty || _hoopPos.isEmpty) return false;
+    if (_ballPos.length < 2 || _hoopPos.isEmpty) return false;
 
     final by = _ballPos.last.$2;
+    final prevBy = _ballPos[_ballPos.length - 2].$2;
     final hcy = _hoopPos.last.$2;
     final hh = _hoopPos.last.$5;
 
-    return by > hcy + 0.3 * hh;
+    // 球正在下降且经过篮筐水平附近
+    return by > prevBy && prevBy < hcy + 0.5 * hh && by > hcy - 0.8 * hh;
   }
 
   // ===== 多方法命中检测 =====

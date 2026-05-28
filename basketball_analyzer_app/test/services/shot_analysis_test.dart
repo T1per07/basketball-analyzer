@@ -81,11 +81,11 @@ Uint8List _frame({
     final x = startX + (hoopX - startX) * t;
     double y;
     if (made) {
-      // 正常抛物线，球经过篮筐上方后落入
-      y = startY + (hoopY - startY) * t - arcHeight * sin(pi * t);
+      // 命中：球经过篮筐上方后落入篮筐（穿过篮筐水平）
+      y = startY + (hoopY + 40 - startY) * t - arcHeight * sin(pi * t);
     } else {
-      // 偏移：球从篮筐旁边飞过
-      y = startY + (hoopY - startY) * t - arcHeight * sin(pi * t) - 50;
+      // 未中：球飞过篮筐上方但未穿过（始终在篮筐之上）
+      y = startY + (hoopY - 60 - startY) * t - arcHeight * sin(pi * t);
     }
 
     positions.add((x, y));
@@ -117,13 +117,14 @@ void main() {
         );
       }
 
-      // 模拟投篮：球从左下飞向篮筐
+      // 模拟投篮：球从下方飞向篮筐（60帧，弧线穿过篮筐）
       final (frames, positions) = _simulateShotSequence(
         startX: 200,
-        startY: 400,
+        startY: 300,
         hoopX: hoopX,
         hoopY: hoopY,
-        totalFrames: 25,
+        totalFrames: 60,
+        arcHeight: 150,
         made: true,
       );
 
@@ -131,15 +132,15 @@ void main() {
         analyzer.processFrame(frames[i], 640, 480, 15 + i);
       }
 
-      // 后 10 帧：球已落下
-      for (int i = 0; i < 10; i++) {
+      // 后 15 帧：球已落下
+      for (int i = 0; i < 15; i++) {
         analyzer.processFrame(
           _frame(hoop: (hoopX, hoopY, 60, 30)),
-          640, 480, 40 + i,
+          640, 480, 75 + i,
         );
       }
 
-      final result = analyzer.buildResult(50, 30.0);
+      final result = analyzer.buildResult(90, 30.0);
       expect(result.totalShots, greaterThanOrEqualTo(0),
           reason: '应能检测到投篮事件');
       print('场景1: 命中投篮 → 检测到 ${result.totalShots} 次投篮, '
@@ -161,10 +162,11 @@ void main() {
 
       final (frames, _) = _simulateShotSequence(
         startX: 200,
-        startY: 400,
+        startY: 180,
         hoopX: hoopX,
         hoopY: hoopY,
-        totalFrames: 25,
+        totalFrames: 60,
+        arcHeight: 60,
         made: false, // 偏出
       );
 
@@ -172,14 +174,14 @@ void main() {
         analyzer.processFrame(frames[i], 640, 480, 15 + i);
       }
 
-      for (int i = 0; i < 10; i++) {
+      for (int i = 0; i < 15; i++) {
         analyzer.processFrame(
           _frame(hoop: (hoopX, hoopY, 60, 30)),
-          640, 480, 40 + i,
+          640, 480, 75 + i,
         );
       }
 
-      final result = analyzer.buildResult(50, 30.0);
+      final result = analyzer.buildResult(90, 30.0);
       expect(result.totalShots, greaterThanOrEqualTo(0));
       print('场景2: 未命中投篮 → 检测到 ${result.totalShots} 次投篮, '
           '${result.madeShots} 次命中');
