@@ -1,0 +1,41 @@
+name: basketball_analyzer
+description: Basketball shot analyzer with AI detection and cross-platform support
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.12.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Charts
+  fl_chart: ^0.69.0
+
+  # File picker
+  file_picker: ^8.0.0
+
+  # Path management
+  path_provider: ^2.1.0
+  path: ^1.9.0
+
+  # Excel export
+  excel: ^4.0.0
+
+  # PDF export
+  pdf: ^3.10.0
+
+  # State management
+  provider: ^6.1.0
+
+  # Camera (live mode)
+  camera: ^0.11.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
