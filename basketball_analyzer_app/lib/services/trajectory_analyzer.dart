@@ -52,9 +52,17 @@ class TrajectoryAnalyzer {
     final apexY = ySmooth[apexIdx];
 
     try {
-      final coeffs = _polyfit(x, ySmooth, 2);
+      // 归一化 x 避免正规方程病态（x 范围 200-440 时 sum(x^4) ~ 2e11）
+      final xMean = x.reduce((a, b) => a + b) / x.length;
+      final xStd = sqrt(x.map((xi) => (xi - xMean) * (xi - xMean)).reduce((a, b) => a + b) / x.length);
+      final xNorm = xStd > 0 ? x.map((xi) => (xi - xMean) / xStd).toList() : x.map((xi) => xi - xMean).toList();
+
+      final coeffs = _polyfit(xNorm, ySmooth, 2);
       if (coeffs.length < 3) return null;
-      final a = coeffs[0], b = coeffs[1], c = coeffs[2];
+      // 转换回原始坐标系
+      final a = xStd > 0 ? coeffs[0] / (xStd * xStd) : coeffs[0];
+      final b = xStd > 0 ? coeffs[1] / xStd - 2 * a * xMean : coeffs[1];
+      final c = coeffs[2] - coeffs[1] * (xStd > 0 ? xMean / xStd : xMean) + a * xMean * xMean;
 
       // R² 计算
       final yPred = x.map((xi) => a * xi * xi + b * xi + c).toList();

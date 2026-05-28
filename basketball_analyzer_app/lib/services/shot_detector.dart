@@ -2,38 +2,40 @@ import 'dart:math';
 import '../models/shot_event.dart';
 import '../models/config.dart';
 
-/// 投篮检测器 — 轨迹驱动 UP→DOWN 状态机
-/// 对应 Python models/shot_detector.py
+/// 投篮检测器 — 轨迹驱动 + 置信度评分
+/// 替代旧的逐帧 UP/DOWN 状态机
+///
+/// 核心逻辑：
+/// 1. 缓冲完整轨迹（非滚动窗口）
+/// 2. 检测弧线最高点 (apex) 作为投篮触发
+/// 3. 球下降经过篮筐水平或超时时评估投篮
+/// 4. 置信度评分替代 2/3 投票
 class ShotDetector {
   double _fps;
   int _frameCount = 0;
 
-  // hoop_pos: [(center_x, center_y, frame, width, height, conf)]
+  // 篮筐位置
   final List<(double, double, int, double, double, double)> _hoopPos = [];
-  // ball_pos: [(center_x, center_y, frame, width, height, conf)]
-  final List<(double, double, int, double, double, double)> _ballPos = [];
+  static const _maxHoopPosCount = 25;
 
-  // UP/DOWN 状态机
-  bool _up = false;
-  bool _down = false;
-  int _upFrame = 0;
-  int _downFrame = 0;
+  // 轨迹缓冲区 — 保存完整飞行弧线
+  final List<(double, double, int, double, double, double)> _trajectoryBuffer = [];
+  static const _maxTrajectorySize = 200;
 
-  // 投篮结果
-  final List<ShotResult> _shotResults = [];
+  // 状态
+  bool _apexDetected = false;
+  int _apexFrame = 0;
   int _lastShotFrame = -999;
+  int _lastRealDetectionFrame = -999; // 最后一次真实球检测帧（非轨迹延续）
 
-  // 每个投篮对应的球位置快照
-  final Map<int, List<(double, double, int, double, double, double)>>
-      _shotBallPositions = {};
+  // 结果
+  final List<ShotResult> _shotResults = [];
+  final Map<int, List<(double, double, int, double, double, double)>> _shotBallPositions = {};
 
   // 篮筐锁定
   (double, double, double, double)? _lockedHoop; // cx, cy, w, h
 
-  static const _maxBallPosAge = 30;
-  static const _maxHoopPosCount = 25;
-
-  ShotDetector({double fps = 30.0}) : _fps = fps; // ignore: prefer_initializing_formals
+  ShotDetector({double fps = 30.0}) : _fps = fps;
 
   void setFps(double fps) {
     if (fps > 0) _fps = fps;
@@ -86,20 +88,50 @@ class ShotDetector {
     final hoopW = hoopLast.$4;
     final hoopH = hoopLast.$5;
 
+    // 添加球位置到轨迹缓冲区
     for (int i = 0; i < ballPositions.length; i++) {
       final (cx, cy) = ballPositions[i];
       final area = i < ballSizes.length ? ballSizes[i] : 0.0;
       final conf = i < ballConfs.length ? ballConfs[i] : 0.5;
 
+      // 置信度过滤
       final inHoop = _inHoopRegion(cx, cy, hoopCx, hoopCy, hoopW, hoopH);
       if (conf < 0.25 && !(inHoop && conf > 0.1)) continue;
 
+      // 距离过滤 — 丢弃距上一帧过远的检测（噪声）
+      if (_trajectoryBuffer.isNotEmpty) {
+        final (px, py, _, _, _, _) = _trajectoryBuffer.last;
+        final dist = sqrt((cx - px) * (cx - px) + (cy - py) * (cy - py));
+        final maxDist = area > 0 ? 4 * sqrt(area) : 80.0;
+        if (dist > maxDist && frameIndex - _trajectoryBuffer.last.$3 < 5) continue;
+      }
+
       final w = area > 0 ? sqrt(area) : 10.0;
-      _ballPos.add((cx, cy, frameIndex, w, w, conf));
+      _trajectoryBuffer.add((cx, cy, frameIndex, w, w, conf));
+      _lastRealDetectionFrame = frameIndex;
     }
 
-    _cleanBallPos(frameIndex);
-    return _shotDetection();
+    // 如果没有球检测但 apex 已检测到且球在篮筐附近，用最后位置延续轨迹
+    if (ballPositions.isEmpty && _apexDetected && _trajectoryBuffer.isNotEmpty) {
+      final (lx, ly, _, _, _, _) = _trajectoryBuffer.last;
+      final distToHoop = sqrt((lx - hoopCx) * (lx - hoopCx) + (ly - hoopCy) * (ly - hoopCy));
+      if (distToHoop < hoopW * 4) {
+        // 用最后已知位置延续（球可能在篮筐后/网中消失）
+        _trajectoryBuffer.add((lx, ly, frameIndex, 0, 0, 0.1));
+      }
+    }
+
+    // 清理旧数据
+    while (_trajectoryBuffer.length > _maxTrajectorySize) {
+      _trajectoryBuffer.removeAt(0);
+    }
+    // 移除超时数据（超过 5 秒）
+    while (_trajectoryBuffer.isNotEmpty &&
+        frameIndex - _trajectoryBuffer.first.$3 > (_fps * 5).round()) {
+      _trajectoryBuffer.removeAt(0);
+    }
+
+    return _detectShot();
   }
 
   bool _inHoopRegion(
@@ -110,298 +142,324 @@ class ShotDetector {
         y < hcy + 1.0 * hh);
   }
 
-  void _cleanBallPos(int frameCount) {
-    if (_ballPos.length < 2) return;
+  // ===== 轨迹驱动投篮检测 =====
 
-    final (x1, y1, f1, w1, h1, c1) = _ballPos[_ballPos.length - 2];
-    final (x2, y2, f2, w2, h2, c2) = _ballPos.last;
-
-    final dist = sqrt((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1));
-    final maxDist =
-        w1 > 0 ? 4 * sqrt(w1 * w1 + h1 * h1) : 40.0;
-    final fDif = f2 - f1;
-
-    if (dist > maxDist && fDif < 5) {
-      _ballPos.removeLast();
-      return;
-    }
-
-    if (w2 > 0 && h2 > 0) {
-      if ((w2 * 1.4 < h2) || (h2 * 1.4 < w2)) {
-        _ballPos.removeLast();
-        return;
-      }
-    }
-
-    if (_ballPos.isNotEmpty &&
-        frameCount - _ballPos.first.$3 > _maxBallPosAge) {
-      _ballPos.removeAt(0);
-    }
-  }
-
-  // ===== 投篮事件触发 =====
-
-  bool _detectUp() {
-    if (_ballPos.isEmpty || _hoopPos.isEmpty) return false;
-
-    final (bx, by, _, _, _, _) = _ballPos.last;
-    final (hcx, hcy, _, hw, hh, _) = _hoopPos.last;
-
-    // 球在篮筐上方区域
-    final x1 = hcx - 8 * hw;
-    final x2 = hcx + 8 * hw;
-    final y1 = hcy - 4 * hh;
-    final y2 = hcy + 0.3 * hh;
-
-    return x1 < bx && bx < x2 && y1 < by && by < y2;
-  }
-
-  bool _detectDown() {
-    if (_ballPos.length < 2 || _hoopPos.isEmpty) return false;
-
-    final by = _ballPos.last.$2;
-    final prevBy = _ballPos[_ballPos.length - 2].$2;
-    final hcy = _hoopPos.last.$2;
-    final hh = _hoopPos.last.$5;
-
-    // 球正在下降且经过篮筐水平附近
-    return by > prevBy && prevBy < hcy + 0.5 * hh && by > hcy - 0.8 * hh;
-  }
-
-  // ===== 多方法命中检测 =====
-
-  bool _checkScore() {
-    if (_ballPos.length < 2 || _hoopPos.isEmpty) return false;
+  ShotResult? _detectShot() {
+    if (_hoopPos.isEmpty || _trajectoryBuffer.length < 5) return null;
 
     final (hcx, hcy, _, hw, hh, _) = _hoopPos.last;
-    int votes = 0;
 
-    if (_methodATrajectory(hcx, hcy, hw, hh)) votes++;
-    if (_methodBCrossing(hcx, hcy, hw, hh)) votes++;
-    if (_methodCProximityDown(hcx, hcy, hw, hh)) votes++;
+    // 步骤 1: 检测弧线最高点 (apex)
+    if (!_apexDetected) {
+      if (_detectApex(hcy, hh)) {
+        _apexDetected = true;
+        _apexFrame = _trajectoryBuffer.last.$3;
+      }
+    }
 
-    return votes >= 2;
-  }
+    // 步骤 2: apex 后检查投篮结束条件
+    if (_apexDetected) {
+      final framesSinceApex = _frameCount - _apexFrame;
+      final maxShotDuration = (_fps * 3).round();
 
-  bool _methodATrajectory(
-      double hcx, double hcy, double hw, double hh) {
-    final rimHeight = hcy - 0.5 * hh;
+      // 结束条件: 球下降经过篮筐水平 或 球进入篮筐区域后消失 或 超时
+      bool ballBelowHoop = _ballBelowHoop(hcy, hh);
+      bool ballNearHoopAndLost = _ballNearHoopAndLost(hcx, hcy, hw, hh);
+      bool timeout = framesSinceApex > maxShotDuration;
 
-    final xPts = <double>[];
-    final yPts = <double>[];
-
-    for (int i = _ballPos.length - 1; i >= 0; i--) {
-      final (bx, by, _, _, _, _) = _ballPos[i];
-      if (by < rimHeight) {
-        xPts.add(bx);
-        yPts.add(by);
-        if (i + 1 < _ballPos.length) {
-          xPts.add(_ballPos[i + 1].$1);
-          yPts.add(_ballPos[i + 1].$2);
+      if (ballBelowHoop || ballNearHoopAndLost || timeout) {
+        // 冷却期检查
+        final cooldown = max(
+          AppConfig.shot.cooldownMinFrames,
+          (AppConfig.shot.cooldownFpsRatio * _fps).round(),
+        );
+        if (_frameCount - _lastShotFrame < cooldown) {
+          _resetDetection();
+          return null;
         }
-        break;
+
+        // 评估投篮
+        final (made, confidence) = _evaluateShot(hcx, hcy, hw, hh);
+
+        final (entryAngle, releaseAngle) = _computeAngles();
+        final result = ShotResult(
+          made: made,
+          frame: _frameCount,
+          hoopX: hcx.round(),
+          hoopWidth: hw.round(),
+          ballId: 0,
+          confidence: confidence,
+          hasApex: true,
+          rimOverlap: made,
+          entryAngle: entryAngle,
+          releaseAngle: releaseAngle,
+        );
+
+        _shotResults.add(result);
+        final shotIdx = _shotResults.length - 1;
+        _shotBallPositions[shotIdx] = List.from(_trajectoryBuffer);
+        _lastShotFrame = _frameCount;
+        _resetDetection();
+        return result;
       }
-    }
-
-    if (xPts.length < 2) return false;
-
-    try {
-      if (xPts.length >= 3) {
-        final coeffs = _polyfit(xPts, yPts, 2);
-        if (coeffs.length >= 3) {
-          final a = coeffs[0], b = coeffs[1], c = coeffs[2];
-          final discriminant = b * b - 4 * a * (c - rimHeight);
-          if (discriminant >= 0) {
-            final sqrtD = sqrt(discriminant);
-            for (final predictedX in [
-              (-b + sqrtD) / (2 * a),
-              (-b - sqrtD) / (2 * a)
-            ]) {
-              if (_checkRimHit(predictedX, hcx, hw)) return true;
-            }
-          }
-        }
-      } else {
-        // 线性
-        final m = (yPts[1] - yPts[0]) / (xPts[1] - xPts[0]);
-        final b = yPts[0] - m * xPts[0];
-        if (m.abs() > 1e-6) {
-          final predictedX = (rimHeight - b) / m;
-          if (_checkRimHit(predictedX, hcx, hw)) return true;
-        }
-      }
-    } catch (_) {}
-
-    return false;
-  }
-
-  bool _checkRimHit(double predictedX, double hcx, double hw) {
-    final rimX1 = hcx - 0.6 * hw;
-    final rimX2 = hcx + 0.6 * hw;
-    if (rimX1 < predictedX && predictedX < rimX2) return true;
-    if (rimX1 - 20 < predictedX && predictedX < rimX2 + 20) return true;
-    return false;
-  }
-
-  bool _methodBCrossing(
-      double hcx, double hcy, double hw, double hh) {
-    final rimTop = hcy - 0.5 * hh;
-    final rimBottom = hcy + 0.5 * hh;
-
-    final above = <int>[];
-    final below = <int>[];
-    final recent = _ballPos.length > 20
-        ? _ballPos.sublist(_ballPos.length - 20)
-        : _ballPos;
-
-    for (int i = 0; i < recent.length; i++) {
-      final (x, y, _, _, _, _) = recent[i];
-      if ((x - hcx).abs() < hw * 3.0) {
-        if (y < rimTop) {
-          above.add(i);
-        } else if (y > rimBottom) {
-          below.add(i);
-        }
-      }
-    }
-
-    for (final ai in above) {
-      for (final bi in below) {
-        if (bi <= ai || bi - ai > 15) continue;
-        bool valid = true;
-        for (int k = ai; k <= bi; k++) {
-          if ((recent[k].$1 - hcx).abs() > hw * 4.0) {
-            valid = false;
-            break;
-          }
-        }
-        if (valid) return true;
-      }
-    }
-
-    return false;
-  }
-
-  bool _methodCProximityDown(
-      double hcx, double hcy, double hw, double hh) {
-    final rimLeft = hcx - 1.5 * hw;
-    final rimRight = hcx + 1.5 * hw;
-    final rimTop = hcy - 1.0 * hh;
-    final rimBottom = hcy + 1.0 * hh;
-
-    final inRim = <(double, double)>[];
-    final recent = _ballPos.length > 15
-        ? _ballPos.sublist(_ballPos.length - 15)
-        : _ballPos;
-
-    for (final (x, y, _, _, _, _) in recent) {
-      if (rimLeft < x &&
-          x < rimRight &&
-          rimTop < y &&
-          y < rimBottom) {
-        inRim.add((x, y));
-      }
-    }
-
-    if (inRim.length < 2) return false;
-
-    for (int i = 1; i < inRim.length; i++) {
-      if (inRim[i].$2 > inRim[i - 1].$2 + 1) return true;
-    }
-
-    return false;
-  }
-
-  // ===== 主检测逻辑 =====
-
-  ShotResult? _shotDetection() {
-    if (_hoopPos.isEmpty || _ballPos.isEmpty) return null;
-
-    // 步骤 1: 检测 UP
-    if (!_up) {
-      _up = _detectUp();
-      if (_up) _upFrame = _ballPos.last.$3;
-    }
-
-    // 步骤 2: 检测 DOWN
-    if (_up && !_down) {
-      _down = _detectDown();
-      if (_down) _downFrame = _ballPos.last.$3;
-    }
-
-    // 步骤 3: 检查投篮
-    if (_up && _down && _upFrame < _downFrame) {
-      final cooldown = max(
-        AppConfig.shot.cooldownMinFrames,
-        (AppConfig.shot.cooldownFpsRatio * _fps).round(),
-      );
-      if (_frameCount - _lastShotFrame < cooldown) {
-        _up = false;
-        _down = false;
-        return null;
-      }
-
-      bool made = _checkScore();
-
-      final (entryAngle, releaseAngle) = _computeAngles();
-      final hcx = _hoopPos.last.$1;
-      final hw = _hoopPos.last.$4;
-      final confidence = _computeShotConfidence();
-
-      final result = ShotResult(
-        made: made,
-        frame: _frameCount,
-        hoopX: hcx.round(),
-        hoopWidth: hw.round(),
-        ballId: 0,
-        confidence: confidence,
-        hasApex: _hasApex(),
-        rimOverlap: made,
-        entryAngle: entryAngle,
-        releaseAngle: releaseAngle,
-      );
-
-      _shotResults.add(result);
-      final shotIdx = _shotResults.length - 1;
-      _shotBallPositions[shotIdx] = List.from(_ballPos);
-      _lastShotFrame = _frameCount;
-      _up = false;
-      _down = false;
-      return result;
     }
 
     return null;
   }
 
-  bool _hasApex() {
-    if (_ballPos.length < 5) return false;
-    final ys = _ballPos
-        .skip(max(0, _ballPos.length - 20))
-        .map((p) => p.$2)
-        .toList();
-    final minIdx = ys.indexOf(ys.reduce(min));
-    return minIdx >= 2 && minIdx <= ys.length - 3;
+  /// 检测弧线最高点 — 球从上升转为下降
+  bool _detectApex(double hcy, double hh) {
+    if (_trajectoryBuffer.length < 5) return false;
+
+    // 搜索整个轨迹缓冲区找最低 y（最高点，屏幕坐标 y 向下）
+    double minY = double.infinity;
+    int minIdx = 0;
+    for (int i = 0; i < _trajectoryBuffer.length; i++) {
+      if (_trajectoryBuffer[i].$2 < minY) {
+        minY = _trajectoryBuffer[i].$2;
+        minIdx = i;
+      }
+    }
+
+    // apex 前必须有足够的上升轨迹，后必须有足够的下降轨迹
+    if (minIdx < 2 || minIdx >= _trajectoryBuffer.length - 2) return false;
+
+    // 取 apex 前后较大范围均值（前5后5，或全部可用点）
+    final beforeStart = max(0, minIdx - 5);
+    final afterEnd = min(_trajectoryBuffer.length, minIdx + 6);
+    final beforeApex = _trajectoryBuffer.sublist(beforeStart, minIdx);
+    final afterApex = _trajectoryBuffer.sublist(minIdx + 1, afterEnd);
+
+    if (beforeApex.isEmpty || afterApex.isEmpty) return false;
+
+    final avgBefore = beforeApex.map((p) => p.$2).reduce((a, b) => a + b) / beforeApex.length;
+    final avgAfter = afterApex.map((p) => p.$2).reduce((a, b) => a + b) / afterApex.length;
+
+    // 球在上升（y 减小）然后下降（y 增大）
+    bool hasApex = avgAfter > minY && avgBefore > minY;
+
+    // apex 应该在篮筐上方附近（给一定容差）
+    bool apexNearHoop = minY < hcy + hh * 2;
+
+    // 最小弧线高度（排除运球和传球）— 用首尾差而非 apex 附近
+    final firstY = _trajectoryBuffer.first.$2;
+    final lastY = _trajectoryBuffer.last.$2;
+    double totalArc = (firstY - minY).abs();
+    bool minArc = totalArc > 20;
+
+    return hasApex && apexNearHoop && minArc;
   }
 
+  /// 检查球是否下降到篮筐水平以下
+  bool _ballBelowHoop(double hcy, double hh) {
+    if (_trajectoryBuffer.isEmpty) return false;
+    final lastY = _trajectoryBuffer.last.$2;
+    return lastY > hcy + hh * 0.5;
+  }
+
+  /// 检查球是否在篮筐附近消失（检测失败）— 可能穿过篮筐
+  bool _ballNearHoopAndLost(
+      double hcx, double hcy, double hw, double hh) {
+    if (_trajectoryBuffer.isEmpty) return false;
+
+    // 使用最后已知球位置（可能是延续点）
+    final (lx, ly, _, _, _, _) = _trajectoryBuffer.last;
+
+    // 球最近在篮筐附近（3 倍宽度范围内）
+    final dist = sqrt((lx - hcx) * (lx - hcx) + (ly - hcy) * (ly - hcy));
+    final nearHoop = dist < hw * 3;
+
+    // 球的真实检测已丢失超过 3 帧（用 _lastRealDetectionFrame 而非轨迹延续帧）
+    bool lost = _frameCount - _lastRealDetectionFrame > 3;
+
+    // 球在 apex 后（已开始下降阶段）
+    bool afterApex = _frameCount - _apexFrame > (_fps * 0.3).round();
+
+    return nearHoop && lost && afterApex;
+  }
+
+  /// 评估投篮命中/未中 — 置信度评分系统
+  (bool, double) _evaluateShot(
+      double hcx, double hcy, double hw, double hh) {
+    double score = 0.0;
+
+    // 证据 1: 轨迹交叉篮筐平面 (0.5 分)
+    if (_crossesRimPlane(hcx, hcy, hw, hh)) score += 0.5;
+
+    // 证据 2: 球在篮筐附近下降 (0.3 分)
+    if (_descendedNearHoop(hcx, hcy, hw, hh)) score += 0.3;
+
+    // 证据 3: 弧线形状合理 (0.2 分)
+    if (_hasValidArc()) score += 0.2;
+
+    // 证据 4: 球消失在篮筐下方 (0.4 分)
+    if (_ballDisappearedBelowHoop(hcx, hcy, hw, hh)) score += 0.4;
+
+    // 证据 5: 球在篮筐附近消失 — 强命中信号 (0.6 分)
+    // 当球在 apex 后消失在篮筐附近，极可能穿过篮筐
+    if (_ballLostNearHoopAfterApex(hcx, hcy, hw, hh)) score += 0.6;
+
+    bool made = score >= 0.5;
+    return (made, score.clamp(0.0, 1.0));
+  }
+
+  /// 检查轨迹是否从篮筐上方穿过到下方
+  bool _crossesRimPlane(
+      double hcx, double hcy, double hw, double hh) {
+    if (_trajectoryBuffer.length < 3) return false;
+
+    final rimY = hcy;
+    final rimLeft = hcx - hw * 1.5;
+    final rimRight = hcx + hw * 1.5;
+
+    for (int i = 1; i < _trajectoryBuffer.length; i++) {
+      final prevY = _trajectoryBuffer[i - 1].$2;
+      final currY = _trajectoryBuffer[i].$2;
+
+      // 球从上方到下方穿过篮筐水平
+      if (prevY < rimY && currY >= rimY) {
+        // 插值计算穿越点的 x
+        final prevX = _trajectoryBuffer[i - 1].$1;
+        final currX = _trajectoryBuffer[i].$1;
+        final t = (rimY - prevY) / (currY - prevY);
+        final crossX = prevX + t * (currX - prevX);
+
+        // 穿越点在篮筐范围内
+        if (crossX >= rimLeft && crossX <= rimRight) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  /// 检查球是否在篮筐附近下降
+  bool _descendedNearHoop(
+      double hcx, double hcy, double hw, double hh) {
+    if (_trajectoryBuffer.length < 5) return false;
+
+    // 找 apex 之后在篮筐附近的点
+    double minY = double.infinity;
+    int minIdx = 0;
+    for (int i = 0; i < _trajectoryBuffer.length; i++) {
+      if (_trajectoryBuffer[i].$2 < minY) {
+        minY = _trajectoryBuffer[i].$2;
+        minIdx = i;
+      }
+    }
+
+    if (minIdx >= _trajectoryBuffer.length - 2) return false;
+
+    // 检查 apex 后是否有下降且在篮筐附近的点
+    int nearHoopCount = 0;
+    for (int i = minIdx + 1; i < _trajectoryBuffer.length; i++) {
+      final (x, y, _, _, _, _) = _trajectoryBuffer[i];
+      final dx = (x - hcx).abs();
+      final dy = (y - hcy).abs();
+      if (dx < hw * 3 && dy < hh * 3) {
+        nearHoopCount++;
+      }
+    }
+
+    return nearHoopCount >= 2;
+  }
+
+  /// 检查弧线形状是否合理（先上后下）
+  bool _hasValidArc() {
+    if (_trajectoryBuffer.length < 5) return false;
+
+    double minY = double.infinity;
+    int minIdx = 0;
+    for (int i = 0; i < _trajectoryBuffer.length; i++) {
+      if (_trajectoryBuffer[i].$2 < minY) {
+        minY = _trajectoryBuffer[i].$2;
+        minIdx = i;
+      }
+    }
+
+    if (minIdx < 1 || minIdx >= _trajectoryBuffer.length - 1) return false;
+
+    // 检查 apex 前后是否在合理位置
+    final beforeY = _trajectoryBuffer[minIdx - 1].$2;
+    final afterY = _trajectoryBuffer[minIdx + 1].$2;
+
+    // 前后都比 apex 低（y 更大）
+    return beforeY > minY && afterY > minY;
+  }
+
+  /// 检查球是否消失在篮筐下方（补篮/扣篮场景）
+  bool _ballDisappearedBelowHoop(
+      double hcx, double hcy, double hw, double hh) {
+    if (_trajectoryBuffer.length < 3) return false;
+
+    final lastPoint = _trajectoryBuffer.last;
+    final (lx, ly, _, _, _, _) = lastPoint;
+
+    // 球在篮筐下方且接近篮筐
+    bool belowHoop = ly > hcy;
+    bool nearHoop = (lx - hcx).abs() < hw * 2;
+
+    // 检查最近几帧是否有球位置（如果球消失，说明可能穿过篮筐）
+    bool recentActivity = _frameCount - lastPoint.$3 < 3;
+
+    return belowHoop && nearHoop && recentActivity;
+  }
+
+  /// 检查球是否在 apex 后消失在篮筐附近 — 强命中信号
+  /// 当球在上升后消失在篮筐区域，极可能穿过篮筐
+  bool _ballLostNearHoopAfterApex(
+      double hcx, double hcy, double hw, double hh) {
+    if (_trajectoryBuffer.length < 3) return false;
+
+    // 球的真实检测已丢失
+    bool lost = _frameCount - _lastRealDetectionFrame > 3;
+    if (!lost) return false;
+
+    // 最后已知位置在篮筐附近
+    final (lx, ly, _, _, _, _) = _trajectoryBuffer.last;
+    final dist = sqrt((lx - hcx) * (lx - hcx) + (ly - hcy) * (ly - hcy));
+    bool nearHoop = dist < hw * 4;
+
+    // 在 apex 之后
+    bool afterApex = _frameCount - _apexFrame > (_fps * 0.2).round();
+
+    return nearHoop && afterApex;
+  }
+
+  // ===== 角度计算 =====
+
   (double, double) _computeAngles() {
-    if (_ballPos.length < 3) return (0.0, 0.0);
+    if (_trajectoryBuffer.length < 3) return (0.0, 0.0);
 
-    final recent = _ballPos.length > 10
-        ? _ballPos.sublist(_ballPos.length - 10)
-        : _ballPos;
-    if (recent.length < 3) return (0.0, 0.0);
+    // 使用完整轨迹（非截断窗口）
+    final points = _trajectoryBuffer;
+    if (points.length < 3) return (0.0, 0.0);
 
-    final xs = recent.map((p) => p.$1).toList();
-    final ys = recent.map((p) => p.$2).toList();
+    final xs = points.map((p) => p.$1).toList();
+    final ys = points.map((p) => p.$2).toList();
 
     try {
-      final coeffs = _polyfit(xs, ys, 2);
-      if (coeffs.length >= 3) {
-        final a = coeffs[0], b = coeffs[1];
-        final hcx = _hoopPos.isNotEmpty ? _hoopPos.last.$1 : xs.last;
-        final slope = 2 * a * hcx + b;
-        final entryAngle = (atan(slope)).abs() * 180 / pi;
+      // 归一化 x 避免数值问题
+      final xMean = xs.reduce((a, b) => a + b) / xs.length;
+      final xStd = sqrt(xs.map((xi) => (xi - xMean) * (xi - xMean)).reduce((a, b) => a + b) / xs.length);
+      final xNorm = xStd > 0
+          ? xs.map((xi) => (xi - xMean) / xStd).toList()
+          : xs.map((xi) => xi - xMean).toList();
 
+      final coeffs = _polyfit(xNorm, ys, 2);
+      if (coeffs.length >= 3) {
+        // 转换回原始坐标系
+        final a = xStd > 0 ? coeffs[0] / (xStd * xStd) : coeffs[0];
+        final b = xStd > 0
+            ? coeffs[1] / xStd - 2 * a * xMean
+            : coeffs[1];
+
+        // 入射角：在篮筐位置的斜率
+        final hcx = _hoopPos.isNotEmpty ? _hoopPos.last.$1 : xs.last;
+        final slopeEntry = 2 * a * hcx + b;
+        final entryAngle = (atan(slopeEntry)).abs() * 180 / pi;
+
+        // 出手角：在轨迹起点的斜率
         final slopeRelease = 2 * a * xs[0] + b;
         final releaseAngle = (atan(slopeRelease)).abs() * 180 / pi;
 
@@ -411,50 +469,11 @@ class ShotDetector {
     return (0.0, 0.0);
   }
 
-  double _computeShotConfidence() {
-    final n = _ballPos.length;
-    final scores = <double>[];
-
-    if (n < 5) {
-      scores.add(0.3);
-    } else if (n < 60) {
-      scores.add(1.0);
-    } else {
-      scores.add(0.7);
-    }
-
-    if (_ballPos.length >= 4) {
-      final ys = _ballPos
-          .skip(max(0, _ballPos.length - 15))
-          .map((p) => p.$2)
-          .toList();
-      final d2 = <double>[];
-      for (int i = 2; i < ys.length; i++) {
-        d2.add(ys[i] - 2 * ys[i - 1] + ys[i - 2]);
-      }
-      if (d2.isNotEmpty) {
-        final mean = d2.reduce((a, b) => a + b) / d2.length;
-        final rmse =
-            sqrt(d2.map((d) => (d - mean) * (d - mean)).reduce((a, b) => a + b) /
-                d2.length);
-        scores.add(max(0.0, 1.0 - rmse / 20.0));
-      } else {
-        scores.add(0.5);
-      }
-    } else {
-      scores.add(0.5);
-    }
-
-    scores.add(_hasApex() ? 1.0 : 0.4);
-    return scores.reduce((a, b) => a + b) / scores.length;
-  }
-
-  /// 多项式拟合（简化版 polyfit）
+  /// 多项式拟合（带部分主元高斯消元）
   List<double> _polyfit(List<double> x, List<double> y, int degree) {
     final n = x.length;
     if (n < degree + 1) throw Exception('Not enough points');
 
-    // 构建正规方程 X^T X c = X^T y
     final cols = degree + 1;
     final ata = List.generate(cols, (_) => List.filled(cols, 0.0));
     final aty = List.filled(cols, 0.0);
@@ -468,9 +487,7 @@ class ShotDetector {
       }
     }
 
-    // 高斯消元
     for (int i = 0; i < cols; i++) {
-      // 主元选择
       int maxRow = i;
       for (int k = i + 1; k < cols; k++) {
         if (ata[k][i].abs() > ata[maxRow][i].abs()) maxRow = k;
@@ -493,7 +510,6 @@ class ShotDetector {
       }
     }
 
-    // 回代
     final result = List.filled(cols, 0.0);
     for (int i = cols - 1; i >= 0; i--) {
       result[i] = aty[i];
@@ -506,17 +522,23 @@ class ShotDetector {
     return result;
   }
 
+  void _resetDetection() {
+    _apexDetected = false;
+    _apexFrame = 0;
+    _lastRealDetectionFrame = -999;
+    _trajectoryBuffer.clear();
+  }
+
   void reset() {
     _hoopPos.clear();
-    _ballPos.clear();
+    _trajectoryBuffer.clear();
     _shotResults.clear();
     _shotBallPositions.clear();
     _lockedHoop = null;
-    _up = false;
-    _down = false;
-    _upFrame = 0;
-    _downFrame = 0;
+    _apexDetected = false;
+    _apexFrame = 0;
     _lastShotFrame = -999;
+    _lastRealDetectionFrame = -999;
     _frameCount = 0;
   }
 }
