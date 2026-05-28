@@ -4,7 +4,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:basketball_analyzer/services/color_ball_detector.dart';
 import 'package:basketball_analyzer/services/hoop_detector.dart';
 import 'package:basketball_analyzer/services/shot_analyzer.dart';
-import 'package:basketball_analyzer/models/models.dart';
 
 Uint8List _loadFrame(String name) {
   final file = File('test/fixtures/$name');

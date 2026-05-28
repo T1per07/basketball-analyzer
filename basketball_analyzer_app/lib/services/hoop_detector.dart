@@ -9,6 +9,13 @@ class HoopDetector {
   (int, int, int, int)? _lockedBox;
   static const _calibFrames = 12;
 
+  // Pre-allocated buffers for connected components analysis in
+  // _findHoopCandidates. Reused across calls to avoid per-call
+  // allocation of Uint8List(rw*rh) and Int32List(rw*rh).
+  Uint8List? _ccMask;
+  Int32List? _ccLabels;
+  int _ccBufSize = 0;
+
   bool get isCalibrated => _calibrated;
 
   (int, int)? get hoopPosition {
@@ -131,8 +138,17 @@ class HoopDetector {
     final rh = roiY2 - roiY1;
     if (rw <= 0 || rh <= 0) return [];
 
-    // 生成篮筐颜色掩码
-    final mask = Uint8List(rw * rh);
+    // 生成篮筐颜色掩码 — reuse pre-allocated buffers
+    final size = rw * rh;
+    if (_ccMask == null || _ccBufSize < size) {
+      _ccMask = Uint8List(size);
+      _ccLabels = Int32List(size);
+      _ccBufSize = size;
+    } else {
+      _ccMask!.fillRange(0, size, 0);
+      _ccLabels!.fillRange(0, size, 0);
+    }
+    final mask = _ccMask!;
     for (int y = 0; y < rh; y++) {
       for (int x = 0; x < rw; x++) {
         final fx = roiX1 + x;
@@ -152,8 +168,8 @@ class HoopDetector {
       }
     }
 
-    // 连通组件分析（Union-Find 两遍扫描）
-    final labels = Int32List(rw * rh);
+    // 连通组件分析（Union-Find 两遍扫描）— labels pre-allocated above
+    final labels = _ccLabels!;
     final parent = <int>[0];
     final count = <int>[0];
     int nextLabel = 1;

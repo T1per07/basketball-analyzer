@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import '../models/models.dart';
 import 'hoop_detector.dart';
 import 'color_ball_detector.dart';
+import 'onnx_detector.dart';
 import 'shot_detector.dart';
 import 'trajectory_analyzer.dart';
 
@@ -11,13 +12,20 @@ import 'trajectory_analyzer.dart';
 class ShotAnalyzer {
   final hoopDetector = HoopDetector();
   final colorDetector = ColorBallDetector();
+  final OnnxDetector onnxDetector = OnnxDetector();
   final ShotDetector shotDetector;
   final TrajectoryAnalyzer trajectoryAnalyzer = TrajectoryAnalyzer();
 
   int _shotCounter = 0;
   (int, int)? _hoopPosition;
+  bool _useOnnx = false;
 
   ShotAnalyzer({double fps = 30.0}) : shotDetector = ShotDetector(fps: fps);
+
+  /// 启用 ONNX 模型检测（需要先调用 onnxDetector.init()）
+  void enableOnnx() {
+    _useOnnx = onnxDetector.isInitialized;
+  }
 
   void reset() {
     hoopDetector.reset();
@@ -28,42 +36,129 @@ class ShotAnalyzer {
   /// 处理一帧
   /// [frameBgr] BGR 格式图像数据
   void processFrame(Uint8List frameBgr, int width, int height, int frameIndex) {
-    // 颜色检测球
-    final ballDetections = colorDetector.detect(frameBgr, width, height);
-
-    // 篮筐检测
-    final hoopPos = hoopDetector.detect(frameBgr, width, height);
-    if (hoopPos != null && hoopDetector.hoopBox != null) {
-      final (hx, hy, hw, hh) = hoopDetector.hoopBox!;
-      shotDetector.updateHoop(hx, hy, w: hw, h: hh);
-      _hoopPosition = hoopPos;
-
-      trajectoryAnalyzer.updateHoopReference(
-        (hoopPos.$1.toDouble(), hoopPos.$2.toDouble()),
-        hw.toDouble(),
-      );
-    }
-
-    // 提取球位置数据 — 每帧只保留最佳候选
     final ballPositions = <(double, double)>[];
     final ballSizes = <double>[];
     final ballConfs = <double>[];
 
-    if (ballDetections.isNotEmpty) {
-      // 选择面积最大的检测（篮球通常是最大的橙色区域）
-      var best = ballDetections.first;
-      for (final det in ballDetections.skip(1)) {
-        final bestArea = (best.$3 - best.$1) * (best.$4 - best.$2);
-        final detArea = (det.$3 - det.$1) * (det.$4 - det.$2);
-        if (detArea > bestArea) best = det;
+    if (_useOnnx && onnxDetector.isInitialized) {
+      // ONNX 模型检测 — 异步转同步（已在 isolate 中预处理）
+      _processFrameOnnx(frameBgr, width, height, frameIndex,
+          ballPositions, ballSizes, ballConfs);
+    } else {
+      // 颜色检测球
+      final ballDetections = colorDetector.detect(frameBgr, width, height);
+
+      // 篮筐检测
+      final hoopPos = hoopDetector.detect(frameBgr, width, height);
+      if (hoopPos != null && hoopDetector.hoopBox != null) {
+        final (hx, hy, hw, hh) = hoopDetector.hoopBox!;
+        shotDetector.updateHoop(hx, hy, w: hw, h: hh);
+        _hoopPosition = hoopPos;
+
+        trajectoryAnalyzer.updateHoopReference(
+          (hoopPos.$1.toDouble(), hoopPos.$2.toDouble()),
+          hw.toDouble(),
+        );
       }
-      final (x1, y1, x2, y2, conf) = best;
-      final cx = (x1 + x2) / 2;
-      final cy = (y1 + y2) / 2;
-      final area = (x2 - x1) * (y2 - y1);
-      ballPositions.add((cx, cy));
-      ballSizes.add(area);
-      ballConfs.add(conf);
+
+      // 提取球位置数据 — 每帧只保留最佳候选
+      if (ballDetections.isNotEmpty) {
+        var best = ballDetections.first;
+        for (final det in ballDetections.skip(1)) {
+          final bestArea = (best.$3 - best.$1) * (best.$4 - best.$2);
+          final detArea = (det.$3 - det.$1) * (det.$4 - det.$2);
+          if (detArea > bestArea) best = det;
+        }
+        final (x1, y1, x2, y2, conf) = best;
+        final cx = (x1 + x2) / 2;
+        final cy = (y1 + y2) / 2;
+        final area = (x2 - x1) * (y2 - y1);
+        ballPositions.add((cx, cy));
+        ballSizes.add(area);
+        ballConfs.add(conf);
+      }
+    }
+
+    // ShotDetector 处理
+    shotDetector.processFrame(
+      ballPositions,
+      ballSizes,
+      ballConfs,
+      frameIndex: frameIndex,
+    );
+  }
+
+  /// ONNX 检测（同步包装，实际推理是异步的）
+  void _processFrameOnnx(
+    Uint8List frameBgr,
+    int width,
+    int height,
+    int frameIndex,
+    List<(double, double)> ballPositions,
+    List<double> ballSizes,
+    List<double> ballConfs,
+  ) {
+    // 注意：这里需要在调用前已经完成推理
+    // 实际使用时应该通过 VideoProcessor 在 isolate 中处理
+    // 这里提供同步接口供测试使用
+  }
+
+  /// 异步 ONNX 检测（用于实际视频处理）
+  Future<void> processFrameOnnxAsync(
+    Uint8List frameBgr,
+    int width,
+    int height,
+    int frameIndex,
+  ) async {
+    if (!onnxDetector.isInitialized) return;
+
+    final (boxes, confs, classIds) =
+        await onnxDetector.detect(frameBgr, width, height);
+
+    final ballPositions = <(double, double)>[];
+    final ballSizes = <double>[];
+    final ballConfs = <double>[];
+
+    // 处理篮球检测
+    for (int i = 0; i < boxes.length; i++) {
+      if (classIds[i] == OnnxDetector.classBasketball) {
+        final (x1, y1, x2, y2) = boxes[i];
+        final cx = (x1 + x2) / 2;
+        final cy = (y1 + y2) / 2;
+        final area = (x2 - x1) * (y2 - y1);
+        ballPositions.add((cx, cy));
+        ballSizes.add(area);
+        ballConfs.add(confs[i]);
+      } else if (classIds[i] == OnnxDetector.classHoop) {
+        // 篮筐检测
+        final (x1, y1, x2, y2) = boxes[i];
+        final hx = x1.round();
+        final hy = y1.round();
+        final hw = (x2 - x1).round();
+        final hh = (y2 - y1).round();
+        shotDetector.updateHoop(hx, hy, w: hw, h: hh);
+        _hoopPosition = (hx + hw ~/ 2, hy + hh ~/ 2);
+
+        trajectoryAnalyzer.updateHoopReference(
+          ((hx + hw / 2).toDouble(), (hy + hh / 2).toDouble()),
+          hw.toDouble(),
+        );
+      }
+    }
+
+    // 如果 ONNX 没检测到篮筐，回退到颜色检测
+    if (_hoopPosition == null) {
+      final hoopPos = hoopDetector.detect(frameBgr, width, height);
+      if (hoopPos != null && hoopDetector.hoopBox != null) {
+        final (hx, hy, hw, hh) = hoopDetector.hoopBox!;
+        shotDetector.updateHoop(hx, hy, w: hw, h: hh);
+        _hoopPosition = hoopPos;
+
+        trajectoryAnalyzer.updateHoopReference(
+          (hoopPos.$1.toDouble(), hoopPos.$2.toDouble()),
+          hw.toDouble(),
+        );
+      }
     }
 
     // ShotDetector 处理

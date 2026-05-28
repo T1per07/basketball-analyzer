@@ -4,8 +4,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:basketball_analyzer/services/color_ball_detector.dart';
 import 'package:basketball_analyzer/services/hoop_detector.dart';
 import 'package:basketball_analyzer/services/shot_analyzer.dart';
-import 'package:basketball_analyzer/services/trajectory_analyzer.dart';
-import 'package:basketball_analyzer/models/models.dart';
 
 /// 从 test/fixtures/ 加载预提取的 BGR 帧
 Uint8List _loadFrame(String name) {

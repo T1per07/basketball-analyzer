@@ -18,11 +18,21 @@ class _LiveScreenState extends State<LiveScreen> {
   List<CameraDescription> _cameras = [];
   bool _isStreaming = false;
   bool _isInitializing = false;
+  bool _useOnnx = false;
+  bool _onnxAvailable = false;
+  bool _onnxProcessing = false; // 防止并发 ONNX 推理
   int _selectedCamera = 0;
   int _frameIndex = 0;
   String? _error;
 
   final _processor = VideoProcessor();
+
+  // Pre-allocated BGR buffer for YUV→BGR conversion.
+  // Reused across frames to avoid allocating Uint8List(w*h*3) every frame.
+  Uint8List? _bgrBuffer;
+  int _bgrW = 0;
+  int _bgrH = 0;
+
   final Map<String, String> _liveStats = {
     '投篮': '0',
     '命中': '0',
@@ -34,6 +44,19 @@ class _LiveScreenState extends State<LiveScreen> {
   void initState() {
     super.initState();
     _initCameras();
+    _checkOnnx();
+  }
+
+  Future<void> _checkOnnx() async {
+    try {
+      final modelPath = '${Directory.current.path}/assets/models/best.onnx';
+      final available = await _processor.enableOnnx(modelPath: modelPath);
+      if (mounted) {
+        setState(() => _onnxAvailable = available);
+      }
+    } catch (_) {
+      // ONNX 不可用
+    }
   }
 
   Future<void> _initCameras() async {
@@ -59,6 +82,14 @@ class _LiveScreenState extends State<LiveScreen> {
       _isInitializing = true;
       _error = null;
     });
+
+    // 启用 ONNX（如果选择）
+    if (_useOnnx && _onnxAvailable) {
+      await _processor.enableOnnx();
+    } else {
+      // 确保使用颜色检测
+      _processor.reset();
+    }
 
     try {
       final camera = _cameras[_selectedCamera % _cameras.length];
@@ -111,6 +142,30 @@ class _LiveScreenState extends State<LiveScreen> {
     // 每 3 帧处理一次，降低 CPU 负载
     if (_frameIndex % 3 != 0) return;
 
+    // ONNX 模式：异步处理，跳过正在处理的帧
+    if (_useOnnx && _onnxAvailable) {
+      if (_onnxProcessing) return;
+      _onnxProcessing = true;
+      final bgrBytes = _yuv420ToBgr(image);
+      if (bgrBytes != null) {
+        _processor.processSingleFrameAsync(
+          bgrBytes, image.width, image.height, _frameIndex,
+        ).then((_) {
+          _onnxProcessing = false;
+          if (_frameIndex % 90 == 0 && mounted) {
+            final stats = _processor.getCurrentStats();
+            setState(() => _liveStats.addAll(stats));
+          }
+        }).catchError((_) {
+          _onnxProcessing = false;
+        });
+      } else {
+        _onnxProcessing = false;
+      }
+      return;
+    }
+
+    // 颜色检测模式：同步处理
     try {
       final bgrBytes = _yuv420ToBgr(image);
       if (bgrBytes != null) {
@@ -142,7 +197,15 @@ class _LiveScreenState extends State<LiveScreen> {
 
     final w = image.width;
     final h = image.height;
-    final bgr = Uint8List(w * h * 3);
+    final needed = w * h * 3;
+
+    // Reuse pre-allocated buffer when dimensions match
+    if (_bgrBuffer == null || _bgrW != w || _bgrH != h) {
+      _bgrBuffer = Uint8List(needed);
+      _bgrW = w;
+      _bgrH = h;
+    }
+    final bgr = _bgrBuffer!;
 
     for (int row = 0; row < h; row++) {
       for (int col = 0; col < w; col++) {
@@ -157,18 +220,21 @@ class _LiveScreenState extends State<LiveScreen> {
         final u = uPlane[uvIndex];
         final v = vPlane[uvIndex];
 
-        // YUV → RGB
-        final r = (y + 1.402 * (v - 128)).round().clamp(0, 255);
-        final g = (y - 0.344136 * (u - 128) - 0.714136 * (v - 128))
-            .round()
-            .clamp(0, 255);
-        final b = (y + 1.772 * (u - 128)).round().clamp(0, 255);
+        // YUV → RGB using fixed-point integer arithmetic.
+        // Coefficients scaled by 256: 1.402≈359, 0.344136≈88,
+        // 0.714136≈183, 1.772≈454. The +128 before >>8 provides
+        // proper rounding (equivalent to .round()).
+        final int du = u - 128;
+        final int dv = v - 128;
+        final int ri = y + ((359 * dv + 128) >> 8);
+        final int gi = y - ((88 * du + 183 * dv + 128) >> 8);
+        final int bi = y + ((454 * du + 128) >> 8);
 
-        // BGR 顺序
+        // BGR order, inline clamp (faster than .clamp() method call)
         final idx = (row * w + col) * 3;
-        bgr[idx] = b;
-        bgr[idx + 1] = g;
-        bgr[idx + 2] = r;
+        bgr[idx]     = bi < 0 ? 0 : (bi > 255 ? 255 : bi);
+        bgr[idx + 1] = gi < 0 ? 0 : (gi > 255 ? 255 : gi);
+        bgr[idx + 2] = ri < 0 ? 0 : (ri > 255 ? 255 : ri);
       }
     }
 
@@ -177,6 +243,7 @@ class _LiveScreenState extends State<LiveScreen> {
 
   @override
   void dispose() {
+    _bgrBuffer = null;
     _cameraController?.dispose();
     super.dispose();
   }
@@ -250,6 +317,34 @@ class _LiveScreenState extends State<LiveScreen> {
               ],
             ),
           const SizedBox(height: 12),
+
+          // ONNX 模型开关
+          if (_onnxAvailable && !_isStreaming)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.smart_toy, color: AppColors.secondary, size: 20),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'AI 模型检测 (ONNX)',
+                      style: TextStyle(fontSize: 14, color: AppColors.text),
+                    ),
+                  ),
+                  Switch(
+                    value: _useOnnx,
+                    onChanged: (v) => setState(() => _useOnnx = v),
+                    activeColor: AppColors.primary,
+                  ),
+                ],
+              ),
+            ),
+          if (_onnxAvailable && !_isStreaming) const SizedBox(height: 12),
 
           // 启动/停止按钮
           SizedBox(

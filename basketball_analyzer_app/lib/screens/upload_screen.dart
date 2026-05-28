@@ -17,6 +17,26 @@ class UploadScreen extends StatefulWidget {
 class _UploadScreenState extends State<UploadScreen> {
   String? _videoPath;
   final _processor = VideoProcessor();
+  bool _useOnnx = false;
+  bool _onnxAvailable = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkOnnx();
+  }
+
+  Future<void> _checkOnnx() async {
+    try {
+      final modelPath = '${Directory.current.path}/assets/models/best.onnx';
+      final available = await _processor.enableOnnx(modelPath: modelPath);
+      if (mounted) {
+        setState(() => _onnxAvailable = available);
+      }
+    } catch (_) {
+      // ONNX 不可用，忽略
+    }
+  }
 
   Future<void> _pickVideo() async {
     final result = await FilePicker.platform.pickFiles(
@@ -40,6 +60,11 @@ class _UploadScreenState extends State<UploadScreen> {
     appState.setAnalyzing(true);
 
     try {
+      // 如果选择 ONNX，确保已启用
+      if (_useOnnx) {
+        await _processor.enableOnnx();
+      }
+
       final result = await _processor.analyzeVideo(
         _videoPath!,
         onProgress: (current, total) {
@@ -118,6 +143,34 @@ class _UploadScreenState extends State<UploadScreen> {
             ),
           ),
           const SizedBox(height: 24),
+
+          // ONNX 模型开关
+          if (_onnxAvailable)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.smart_toy, color: AppColors.secondary, size: 20),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'AI 模型检测 (ONNX)',
+                      style: TextStyle(fontSize: 14, color: AppColors.text),
+                    ),
+                  ),
+                  Switch(
+                    value: _useOnnx,
+                    onChanged: (v) => setState(() => _useOnnx = v),
+                    activeColor: AppColors.primary,
+                  ),
+                ],
+              ),
+            ),
+          if (_onnxAvailable) const SizedBox(height: 16),
 
           // 分析按钮
           SizedBox(

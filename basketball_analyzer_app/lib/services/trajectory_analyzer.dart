@@ -2,6 +2,7 @@ import 'dart:math';
 import '../models/ball_track.dart';
 import '../models/trajectory_params.dart';
 import '../models/config.dart';
+import '../utils/math_utils.dart';
 
 /// 轨迹分析器 — 抛物线拟合 + 运动学参数
 /// 对应 Python models/trajectory.py TrajectoryAnalyzer
@@ -57,7 +58,7 @@ class TrajectoryAnalyzer {
       final xStd = sqrt(x.map((xi) => (xi - xMean) * (xi - xMean)).reduce((a, b) => a + b) / x.length);
       final xNorm = xStd > 0 ? x.map((xi) => (xi - xMean) / xStd).toList() : x.map((xi) => xi - xMean).toList();
 
-      final coeffs = _polyfit(xNorm, ySmooth, 2);
+      final coeffs = polyfit(xNorm, ySmooth, 2);
       if (coeffs.length < 3) return null;
       // 转换回原始坐标系: y = c0 + c1*xNorm + c2*xNorm² → y = a*x² + b*x + c
       final a = xStd > 0 ? coeffs[2] / (xStd * xStd) : coeffs[2];
@@ -143,7 +144,7 @@ class TrajectoryAnalyzer {
     final positions = track.positions;
     if (positions.length < 2) return 0.0;
 
-    // 方法 1: 球像素大小
+    // 方法 1: 球像素大小（最准确，使用焦距和真实球直径）
     final avgBallSize = _estimateBallPixelSize(track);
     if (avgBallSize > 5) {
       final focalLength = _frameWidth /
@@ -153,7 +154,7 @@ class TrajectoryAnalyzer {
       return distanceM.clamp(0.5, 15.0);
     }
 
-    // 方法 2: 水平像素距离 + 篮筐宽度参考
+    // 方法 2: 篮筐宽度参考
     if (_hoopPixelWidth > 0 && _hoopPosition != null) {
       final dist = _estimateDistanceFromHoop(track);
       if (dist > 0) return dist;
@@ -170,7 +171,7 @@ class TrajectoryAnalyzer {
   }
 
   double _estimateDistanceFromHoop(BallTrack track) {
-    if (_hoopWidthHistory.length < 3) return 0.0;
+    if (_hoopWidthHistory.isEmpty) return 0.0;
     final sorted = List<double>.from(_hoopWidthHistory)..sort();
     final refWidth = sorted[sorted.length ~/ 2];
     if (refWidth < 5 || _hoopPosition == null) return 0.0;
@@ -256,63 +257,10 @@ class TrajectoryAnalyzer {
       // 简单二次多项式平滑
       final xVals = List.generate(window, (j) => j - half);
       try {
-        final coeffs = _polyfit(
+        final coeffs = polyfit(
             xVals.map((v) => v.toDouble()).toList(), segment, polyorder);
         result[i] = coeffs[0] + coeffs[1] * 0 + coeffs[2] * 0;
       } catch (_) {}
-    }
-
-    return result;
-  }
-
-  /// 多项式拟合
-  List<double> _polyfit(List<double> x, List<double> y, int degree) {
-    final n = x.length;
-    if (n < degree + 1) throw Exception('Not enough points');
-
-    final cols = degree + 1;
-    final ata = List.generate(cols, (_) => List.filled(cols, 0.0));
-    final aty = List.filled(cols, 0.0);
-
-    for (int i = 0; i < n; i++) {
-      for (int j = 0; j < cols; j++) {
-        for (int k = 0; k < cols; k++) {
-          ata[j][k] += pow(x[i], j + k).toDouble();
-        }
-        aty[j] += pow(x[i], j).toDouble() * y[i];
-      }
-    }
-
-    for (int i = 0; i < cols; i++) {
-      int maxRow = i;
-      for (int k = i + 1; k < cols; k++) {
-        if (ata[k][i].abs() > ata[maxRow][i].abs()) maxRow = k;
-      }
-      final tmp = ata[i];
-      ata[i] = ata[maxRow];
-      ata[maxRow] = tmp;
-      final tmpY = aty[i];
-      aty[i] = aty[maxRow];
-      aty[maxRow] = tmpY;
-
-      if (ata[i][i].abs() < 1e-12) throw Exception('Singular matrix');
-
-      for (int k = i + 1; k < cols; k++) {
-        final factor = ata[k][i] / ata[i][i];
-        for (int j = i; j < cols; j++) {
-          ata[k][j] -= factor * ata[i][j];
-        }
-        aty[k] -= factor * aty[i];
-      }
-    }
-
-    final result = List.filled(cols, 0.0);
-    for (int i = cols - 1; i >= 0; i--) {
-      result[i] = aty[i];
-      for (int j = i + 1; j < cols; j++) {
-        result[i] -= ata[i][j] * result[j];
-      }
-      result[i] /= ata[i][i];
     }
 
     return result;

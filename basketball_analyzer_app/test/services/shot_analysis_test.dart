@@ -1,8 +1,6 @@
 import 'dart:math';
 import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:basketball_analyzer/services/color_ball_detector.dart';
-import 'package:basketball_analyzer/services/hoop_detector.dart';
 import 'package:basketball_analyzer/services/shot_detector.dart';
 import 'package:basketball_analyzer/services/trajectory_analyzer.dart';
 import 'package:basketball_analyzer/services/shot_analyzer.dart';
@@ -118,13 +116,14 @@ void main() {
       }
 
       // 模拟投篮：球从下方飞向篮筐（60帧，弧线穿过篮筐）
+      // arcHeight=250 确保球进入 UP 区域（y < hcy-0.3*hh = 111）
       final (frames, positions) = _simulateShotSequence(
         startX: 200,
-        startY: 300,
+        startY: 350,
         hoopX: hoopX,
         hoopY: hoopY,
         totalFrames: 60,
-        arcHeight: 150,
+        arcHeight: 250,
         made: true,
       );
 
@@ -141,8 +140,8 @@ void main() {
       }
 
       final result = analyzer.buildResult(90, 30.0);
-      expect(result.totalShots, greaterThanOrEqualTo(0),
-          reason: '应能检测到投篮事件');
+      expect(result.totalShots, greaterThanOrEqualTo(1),
+          reason: '60帧抛物线穿过篮筐(made=true)应至少检测到1次投篮');
       print('场景1: 命中投篮 → 检测到 ${result.totalShots} 次投篮, '
           '${result.madeShots} 次命中');
     });
@@ -160,13 +159,14 @@ void main() {
         );
       }
 
+      // 高弧线偏出：球飞过篮筐上方，不穿过篮筐水平
       final (frames, _) = _simulateShotSequence(
         startX: 200,
         startY: 180,
         hoopX: hoopX,
         hoopY: hoopY,
         totalFrames: 60,
-        arcHeight: 60,
+        arcHeight: 200,
         made: false, // 偏出
       );
 
@@ -204,12 +204,15 @@ void main() {
       int frameIdx = 15;
 
       for (int shot = 0; shot < 3; shot++) {
+        // arcHeight=200 + startY=350 确保球进入 UP 区域（peak y≈95 < 111）
+        // totalFrames=45 确保球到达 DOWN 区域（y > 129）
         final (frames, _) = _simulateShotSequence(
           startX: 180 + shot * 40,
-          startY: 420,
+          startY: 350,
           hoopX: hoopX,
           hoopY: hoopY,
-          totalFrames: 20,
+          totalFrames: 45,
+          arcHeight: 200,
           made: shot != 1, // 第 2 球未中
         );
 
@@ -226,6 +229,8 @@ void main() {
       }
 
       final result = analyzer.buildResult(frameIdx, 30.0);
+      expect(result.shots.length, greaterThanOrEqualTo(1),
+          reason: '3次模拟投篮(2中1未中)应至少检测到1次');
       expect(result.shots.length, lessThanOrEqualTo(3),
           reason: '不应超过 3 次投篮');
       print('场景3: 连续 3 次投篮 → 检测到 ${result.totalShots} 次');
@@ -354,25 +359,27 @@ void main() {
       analyzer.setFps(30);
       analyzer.updateHoopReference((320.0, 120.0), 60.0);
 
-      // 近距离（上篮）
+      // 近距离（上篮）— 球面积大（球近，看起来大）→ 距离短
       final track1 = BallTrack(trackId: 0);
       for (int i = 0; i < 10; i++) {
         track1.addPoint(i, 280 + i * 4.0, 350 - i * 20.0,
-            confidence: 0.8, ballArea: 600);
+            confidence: 0.8, ballArea: 8000); // ~1m距离
       }
       final p1 = analyzer.fitTrajectory(track1);
       final type1 = analyzer.classifyShotType(p1);
-      print('场景8a: 近距离 → $type1 (应为 layup 或 mid_range)');
+      expect(type1, 'layup', reason: '近距离应分类为 layup');
+      print('场景8a: 近距离 → $type1');
 
-      // 远距离（三分）
+      // 远距离（三分）— 球面积小（球远，看起来小）→ 距离长
       final track2 = BallTrack(trackId: 1);
       for (int i = 0; i < 20; i++) {
         final x = 100.0 + i * 20.0;
         final y = 450 - 300 * sin(pi * i / 19);
-        track2.addPoint(i, x, y, confidence: 0.7, ballArea: 300);
+        track2.addPoint(i, x, y, confidence: 0.7, ballArea: 500); // ~6m距离
       }
       final p2 = analyzer.fitTrajectory(track2);
       final type2 = analyzer.classifyShotType(p2);
+      expect(type2, 'three_point', reason: '远距离应分类为 three_point');
       print('场景8b: 远距离 → $type2');
     });
   });
@@ -483,15 +490,15 @@ void main() {
         );
       }
 
-      // 投篮
+      // 投篮 — arcHeight=200 + startY=350 确保进入 UP 区域
       final (frames, _) = _simulateShotSequence(
         startX: 200,
-        startY: 420,
+        startY: 350,
         hoopX: hoopX,
         hoopY: hoopY,
         totalFrames: 30,
         made: true,
-        arcHeight: 180,
+        arcHeight: 200,
       );
 
       for (int i = 0; i < frames.length; i++) {
@@ -518,6 +525,13 @@ void main() {
         print('  飞行时间: ${shot.flightTime.toStringAsFixed(3)} s');
         print('  弧线高度: ${shot.arcHeight.toStringAsFixed(2)} m');
         print('  置信度: ${shot.confidence.toStringAsFixed(2)}');
+        // 验证运动学参数的合理性
+        expect(shot.distance, greaterThan(0),
+            reason: '检测到的投篮距离应大于0');
+        expect(shot.releaseAngle, inRange(0, 90),
+            reason: '出手角应在 0-90° 范围内');
+        expect(shot.entryAngle, inRange(0, 90),
+            reason: '入射角应在 0-90° 范围内');
       } else {
         print('场景12: 未检测到投篮（检测灵敏度待调）');
       }

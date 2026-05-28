@@ -47,8 +47,28 @@ class FrameData {
 class VideoProcessor {
   final ShotAnalyzer analyzer;
   VideoInfo? _videoInfo;
+  bool _onnxEnabled = false;
+
+  // Pre-allocated accumulation buffer for ffmpeg stdout chunks.
+  // Replaces BytesBuilder to avoid repeated toBytes() copies of the
+  // entire accumulated buffer on every frame extraction.
+  Uint8List _accumBuffer = Uint8List(0);
+  int _bufferPos = 0;
 
   VideoProcessor({double fps = 30.0}) : analyzer = ShotAnalyzer(fps: fps);
+
+  /// 启用 ONNX 模型检测
+  Future<bool> enableOnnx({String? modelPath}) async {
+    try {
+      await analyzer.onnxDetector.init(modelPath: modelPath);
+      analyzer.enableOnnx();
+      _onnxEnabled = analyzer.onnxDetector.isInitialized;
+      return _onnxEnabled;
+    } catch (_) {
+      _onnxEnabled = false;
+      return false;
+    }
+  }
 
   VideoInfo? get videoInfo => _videoInfo;
 
@@ -125,23 +145,43 @@ class VideoProcessor {
     process.stderr.drain();
 
     final frameSize = info.width * info.height * 3;
-    final buffer = BytesBuilder();
+    _accumBuffer = Uint8List(frameSize * 4);
+    _bufferPos = 0;
     int frameIndex = 0;
 
     await for (final chunk in process.stdout) {
-      buffer.add(chunk);
+      // Ensure accumulation buffer has room for the incoming chunk
+      if (_bufferPos + chunk.length > _accumBuffer.length) {
+        final newBuf = Uint8List((_bufferPos + chunk.length) * 2);
+        newBuf.setRange(0, _bufferPos, _accumBuffer);
+        _accumBuffer = newBuf;
+      }
+      _accumBuffer.setRange(_bufferPos, _bufferPos + chunk.length, chunk);
+      _bufferPos += chunk.length;
 
-      while (buffer.length >= frameSize) {
-        final bytes = buffer.toBytes();
-        final frameBytes = Uint8List.fromList(bytes.sublist(0, frameSize));
-        final remaining = Uint8List.fromList(bytes.sublist(frameSize));
-        buffer.clear();
-        buffer.add(remaining);
+      while (_bufferPos >= frameSize) {
+        // Copy only the frame portion out (one allocation, no full-buffer copy)
+        final frameBytes = Uint8List(frameSize);
+        frameBytes.setRange(0, frameSize, _accumBuffer);
+
+        // Shift remaining bytes to front in-place (avoids allocating
+        // a second copy for the tail like the old BytesBuilder approach)
+        final remaining = _bufferPos - frameSize;
+        if (remaining > 0) {
+          _accumBuffer.setRange(0, remaining, _accumBuffer, frameSize);
+        }
+        _bufferPos = remaining;
 
         if (frameIndex % skip == 0) {
-          analyzer.processFrame(
-            frameBytes, info.width, info.height, frameIndex,
-          );
+          if (_onnxEnabled) {
+            await analyzer.processFrameOnnxAsync(
+              frameBytes, info.width, info.height, frameIndex,
+            );
+          } else {
+            analyzer.processFrame(
+              frameBytes, info.width, info.height, frameIndex,
+            );
+          }
         }
 
         frameIndex++;
@@ -155,9 +195,20 @@ class VideoProcessor {
     return analyzer.buildResult(frameIndex, info.fps);
   }
 
-  /// 分析单帧（用于实时模式）
+  /// 分析单帧（同步，颜色检测）
   void processSingleFrame(Uint8List bgrBytes, int width, int height, int frameIndex) {
     analyzer.processFrame(bgrBytes, width, height, frameIndex);
+  }
+
+  /// 分析单帧（异步，ONNX 检测）
+  Future<void> processSingleFrameAsync(
+    Uint8List bgrBytes, int width, int height, int frameIndex,
+  ) async {
+    if (_onnxEnabled) {
+      await analyzer.processFrameOnnxAsync(bgrBytes, width, height, frameIndex);
+    } else {
+      analyzer.processFrame(bgrBytes, width, height, frameIndex);
+    }
   }
 
   Map<String, String> getCurrentStats() => analyzer.getCurrentStats();
