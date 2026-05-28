@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math';
 import 'dart:typed_data';
 import '../models/models.dart';
 import 'shot_analyzer.dart';
@@ -90,9 +91,11 @@ class VideoProcessor {
   }
 
   /// 分析视频 — 逐帧处理
+  /// [maxFrames] 限制最大处理帧数（用于测试或预览）
   Future<AnalysisResult> analyzeVideo(
     String videoPath, {
     void Function(int current, int total)? onProgress,
+    int? maxFrames,
   }) async {
     final info = await getVideoInfo(videoPath);
     analyzer.trajectoryAnalyzer.setFrameWidth(info.width);
@@ -100,15 +103,26 @@ class VideoProcessor {
     analyzer.shotDetector.setFps(info.fps);
 
     final skip = (info.fps / AppConfig.video.targetProcessFps).round().clamp(1, 10);
+    final effectiveTotal = maxFrames != null
+        ? min(maxFrames, info.totalFrames)
+        : info.totalFrames;
 
     // 使用 ffmpeg 提取帧
-    final process = await Process.start('ffmpeg', [
+    final ffmpegArgs = <String>[
+      '-loglevel', 'error',
       '-i', videoPath,
       '-vf', 'scale=${info.width}:${info.height}',
       '-f', 'rawvideo',
       '-pix_fmt', 'bgr24',
-      '-',
-    ]);
+    ];
+    if (maxFrames != null) {
+      ffmpegArgs.addAll(['-frames:v', '$maxFrames']);
+    }
+    ffmpegArgs.add('-');
+
+    final process = await Process.start('ffmpeg', ffmpegArgs);
+    // 消费 stderr 防止缓冲区阻塞
+    process.stderr.drain();
 
     final frameSize = info.width * info.height * 3;
     final buffer = BytesBuilder();
@@ -132,7 +146,7 @@ class VideoProcessor {
 
         frameIndex++;
         if (onProgress != null && frameIndex % 30 == 0) {
-          onProgress(frameIndex, info.totalFrames);
+          onProgress(frameIndex, effectiveTotal);
         }
       }
     }
@@ -160,9 +174,11 @@ class VideoProcessor {
     final match = RegExp(pattern).firstMatch(json);
     if (match == null) return null;
     final g1 = match.group(1)!;
-    final g2 = match.group(2);
-    if (g2 != null) {
-      return int.parse(g1) / int.parse(g2);
+    if (match.groupCount >= 2) {
+      final g2 = match.group(2);
+      if (g2 != null) {
+        return int.parse(g1) / int.parse(g2);
+      }
     }
     return double.tryParse(g1);
   }
