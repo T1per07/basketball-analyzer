@@ -28,7 +28,8 @@ class _UploadScreenState extends State<UploadScreen> {
 
   Future<void> _checkOnnx() async {
     try {
-      final modelPath = '${Directory.current.path}/assets/models/best.onnx';
+      final exeDir = File(Platform.resolvedExecutable).parent.path;
+      final modelPath = '$exeDir/data/flutter_assets/assets/models/best.onnx';
       final available = await _processor.enableOnnx(modelPath: modelPath);
       if (mounted) {
         setState(() => _onnxAvailable = available);
