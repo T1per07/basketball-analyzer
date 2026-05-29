@@ -8,6 +8,8 @@ class HoopDetector {
   (int, int, int, int)? _hoopBox; // x, y, w, h
   (int, int, int, int)? _lockedBox;
   static const _calibFrames = 12;
+  static const _calibMaxAttempts = 60; // 超时：60帧未完成校准则放弃
+  int _calibAttemptCount = 0;
 
   // Pre-allocated buffers for connected components analysis in
   // _findHoopCandidates. Reused across calls to avoid per-call
@@ -35,6 +37,8 @@ class HoopDetector {
   }
 
   (int, int)? _calibrate(Uint8List frameBgr, int width, int height) {
+    _calibAttemptCount++;
+
     final candidates = _findHoopCandidates(frameBgr, width, height, 0, 0, width, height);
     if (candidates.isNotEmpty) {
       // 选择最接近矩形（宽>高）且面积合理的候选
@@ -51,6 +55,9 @@ class HoopDetector {
     }
 
     if (_calibrationBuffer.length >= _calibFrames) {
+      _finishCalibration();
+    } else if (_calibAttemptCount >= _calibMaxAttempts && _calibrationBuffer.isNotEmpty) {
+      // 超时：用已收集的数据完成校准（即使不足 _calibFrames 帧）
       _finishCalibration();
     }
     return hoopPosition;
@@ -280,5 +287,6 @@ class HoopDetector {
     _calibrated = false;
     _hoopBox = null;
     _lockedBox = null;
+    _calibAttemptCount = 0;
   }
 }

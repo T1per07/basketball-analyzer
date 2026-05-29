@@ -88,7 +88,7 @@ class ShotAnalyzer {
     );
   }
 
-  /// ONNX 检测（同步包装，实际推理是异步的）
+  /// ONNX 同步回退 — 当异步推理不可用时，降级到颜色检测
   void _processFrameOnnx(
     Uint8List frameBgr,
     int width,
@@ -98,9 +98,20 @@ class ShotAnalyzer {
     List<double> ballSizes,
     List<double> ballConfs,
   ) {
-    // 注意：这里需要在调用前已经完成推理
-    // 实际使用时应该通过 VideoProcessor 在 isolate 中处理
-    // 这里提供同步接口供测试使用
+    // ONNX 推理需要异步执行，同步路径降级到颜色检测
+    final ballDetections = colorDetector.detect(frameBgr, width, height);
+    if (ballDetections.isNotEmpty) {
+      var best = ballDetections.first;
+      for (final det in ballDetections.skip(1)) {
+        final bestArea = (best.$3 - best.$1) * (best.$4 - best.$2);
+        final detArea = (det.$3 - det.$1) * (det.$4 - det.$2);
+        if (detArea > bestArea) best = det;
+      }
+      final (x1, y1, x2, y2, conf) = best;
+      ballPositions.add(((x1 + x2) / 2, (y1 + y2) / 2));
+      ballSizes.add((x2 - x1) * (y2 - y1));
+      ballConfs.add(conf);
+    }
   }
 
   /// 异步 ONNX 检测（用于实际视频处理）

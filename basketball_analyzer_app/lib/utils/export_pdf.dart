@@ -93,20 +93,39 @@ class PdfExporter {
     );
   }
 
-  static pw.Table _buildShotTable(AnalysisResult result) {
-    return pw.TableHelper.fromTextArray(
-      headers: ['ID', '类型', '命中', '距离', '出手角', '速度'],
-      data: result.shots.take(50).map((s) => [
-        '${s.shotId}',
-        s.shotType,
-        s.made ? '是' : '否',
-        '${s.distance.toStringAsFixed(1)}m',
-        '${s.releaseAngle.toStringAsFixed(0)}°',
-        '${s.shotSpeed.toStringAsFixed(1)}m/s',
-      ]).toList(),
-      headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
-      headerDecoration: const pw.BoxDecoration(color: PdfColors.grey300),
-      cellStyle: const pw.TextStyle(fontSize: 9),
-    );
+  static pw.Widget _buildShotTable(AnalysisResult result) {
+    final headers = ['ID', '类型', '命中', '距离', '出手角', '速度'];
+    final allRows = result.shots.map((s) => [
+      '${s.shotId}',
+      s.shotType,
+      s.made ? '是' : '否',
+      '${s.distance.toStringAsFixed(1)}m',
+      '${s.releaseAngle.toStringAsFixed(0)}°',
+      '${s.shotSpeed.toStringAsFixed(1)}m/s',
+    ]).toList();
+
+    // Split into pages of 40 rows each
+    const pageSize = 40;
+    final widgets = <pw.Widget>[];
+    for (int i = 0; i < allRows.length; i += pageSize) {
+      final end = (i + pageSize < allRows.length) ? i + pageSize : allRows.length;
+      final pageRows = allRows.sublist(i, end);
+      widgets.add(pw.TableHelper.fromTextArray(
+        headers: headers,
+        data: pageRows,
+        headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+        headerDecoration: const pw.BoxDecoration(color: PdfColors.grey300),
+        cellStyle: const pw.TextStyle(fontSize: 9),
+      ));
+      if (end < allRows.length) {
+        widgets.add(pw.SizedBox(height: 8));
+        widgets.add(pw.Text(
+          '（续前 — 第 ${i + 1}-${end} 条，共 ${allRows.length} 条）',
+          style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey600),
+        ));
+      }
+    }
+
+    return pw.Column(children: widgets);
   }
 }

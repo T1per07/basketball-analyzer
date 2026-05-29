@@ -254,12 +254,13 @@ class TrajectoryAnalyzer {
 
     for (int i = half; i < data.length - half; i++) {
       final segment = data.sublist(i - half, i + half + 1);
-      // 简单二次多项式平滑
-      final xVals = List.generate(window, (j) => j - half);
+      final xVals = List.generate(window, (j) => (j - half).toDouble());
       try {
-        final coeffs = polyfit(
-            xVals.map((v) => v.toDouble()).toList(), segment, polyorder);
-        result[i] = coeffs[0] + coeffs[1] * 0 + coeffs[2] * 0;
+        final coeffs = polyfit(xVals, segment, polyorder);
+        // Evaluate at x=0 (center of the window) — the whole point of
+        // centering xVals around 0 is that evaluating at the center
+        // gives the smoothed value for position i.
+        result[i] = coeffs[0];
       } catch (_) {}
     }
 

@@ -179,8 +179,9 @@ class _LiveScreenState extends State<LiveScreen> {
           setState(() => _liveStats.addAll(stats));
         }
       }
-    } catch (_) {
-      // 帧处理失败静默跳过
+    } catch (e) {
+      // 帧处理失败 — 记录但不中断（连续失败可能表示系统问题）
+      debugPrint('Frame $_frameIndex processing error: $e');
     }
   }
 

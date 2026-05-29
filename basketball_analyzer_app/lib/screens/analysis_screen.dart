@@ -135,11 +135,28 @@ class AnalysisScreen extends StatelessWidget {
   }
 
   List<CourtShotPoint> _buildCourtShots(AnalysisResult result) {
+    if (result.shots.isEmpty) return [];
+
+    // Normalize hoopX to 0-1 range (horizontal court position)
+    final hoopXs = result.shots.map((s) => s.hoopX).toList();
+    final minX = hoopXs.reduce((a, b) => a < b ? a : b).toDouble();
+    final maxX = hoopXs.reduce((a, b) => a > b ? a : b).toDouble();
+    final xRange = maxX - minX;
+
+    // Normalize distance to 0-1 range (0=hoop, 1=half court)
+    final distances = result.shots.map((s) => s.distance).toList();
+    final maxDist = distances.reduce((a, b) => a > b ? a : b);
+    final distRange = maxDist > 0 ? maxDist : 1.0;
+
     return result.shots.map((s) {
+      final normX = xRange > 0 ? (s.hoopX - minX) / xRange : 0.5;
+      // y: 0 = near hoop (bottom of court), 1 = far (top of court)
+      final normY = 1.0 - (s.distance / distRange).clamp(0.0, 1.0);
       return CourtShotPoint(
-        x: s.hoopX.toDouble(),
-        y: s.frameStart.toDouble(),
+        x: normX.clamp(0.05, 0.95),
+        y: normY.clamp(0.3, 0.95),
         made: s.made,
+        type: s.shotType,
       );
     }).toList();
   }

@@ -110,7 +110,13 @@ class CourtPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CourtPainter oldDelegate) {
-    return oldDelegate.shots != shots;
+    if (oldDelegate.shots.length != shots.length) return true;
+    for (int i = 0; i < shots.length; i++) {
+      if (oldDelegate.shots[i].x != shots[i].x ||
+          oldDelegate.shots[i].y != shots[i].y ||
+          oldDelegate.shots[i].made != shots[i].made) return true;
+    }
+    return false;
   }
 }
 

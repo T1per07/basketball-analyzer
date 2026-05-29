@@ -106,8 +106,7 @@ class ShotDetector {
         final (px, py, _, _, _, _) = _ballPos.last;
         final dist = sqrt((cx - px) * (cx - px) + (cy - py) * (cy - py));
         final maxDist = area > 0 ? 4 * sqrt(area) : 40.0;
-        final fDiff = frameIndex - _ballPos.last.$3;
-        if (dist > maxDist && fDiff < 5) continue;
+        if (dist > maxDist) continue;
 
         // 宽高比过滤（篮球应接近正方形）
         if (area > 0) {
