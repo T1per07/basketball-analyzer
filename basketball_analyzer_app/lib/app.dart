@@ -26,7 +26,7 @@ class BasketballAnalyzerApp extends StatelessWidget {
     return ChangeNotifierProvider(
       create: (_) => AppState(),
       child: MaterialApp(
-      title: 'Basketball Analyzer',
+      title: 'BASANS',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         brightness: Brightness.dark,
@@ -116,7 +116,7 @@ class _MainNavigationState extends State<MainNavigation> {
           ),
           const SizedBox(width: 12),
           const Text(
-            'SHOT ANALYZER',
+            'BASANS',
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.bold,

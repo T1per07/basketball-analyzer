@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#FF6B35"/>
+      <stop offset="100%" style="stop-color:#E8430A"/>
+    </linearGradient>
+    <linearGradient id="ball" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#FF8C42"/>
+      <stop offset="100%" style="stop-color:#D4380D"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Rounded square background -->
+  <rect x="16" y="16" width="480" height="480" rx="96" ry="96" fill="url(#bg)"/>
+
+  <!-- Basketball -->
+  <circle cx="256" cy="210" r="120" fill="url(#ball)" stroke="#C43000" stroke-width="3"/>
+
+  <!-- Ball seam lines -->
+  <path d="M 256 90 Q 256 210 256 330" fill="none" stroke="#C43000" stroke-width="3" opacity="0.6"/>
+  <path d="M 136 210 Q 256 210 376 210" fill="none" stroke="#C43000" stroke-width="3" opacity="0.6"/>
+  <path d="M 160 120 Q 256 180 352 120" fill="none" stroke="#C43000" stroke-width="2.5" opacity="0.5"/>
+  <path d="M 160 300 Q 256 240 352 300" fill="none" stroke="#C43000" stroke-width="2.5" opacity="0.5"/>
+
+  <!-- Trajectory arc (shot analysis) -->
+  <path d="M 140 320 Q 200 100 320 160" fill="none" stroke="#FFFFFF" stroke-width="4" stroke-dasharray="8 6" opacity="0.8"/>
+  <circle cx="320" cy="160" r="6" fill="#FFFFFF" opacity="0.9"/>
+
+  <!-- Hoop silhouette -->
+  <ellipse cx="340" cy="280" rx="35" ry="10" fill="none" stroke="#FFFFFF" stroke-width="3" opacity="0.7"/>
+  <line x1="340" y1="280" x2="340" y2="310" stroke="#FFFFFF" stroke-width="2" opacity="0.5"/>
+
+  <!-- BASANS text -->
+  <text x="256" y="420" font-family="Arial Black, Arial, sans-serif" font-size="72" font-weight="900" fill="#FFFFFF" text-anchor="middle" letter-spacing="8">BASANS</text>
+
+  <!-- Tagline -->
+  <text x="256" y="458" font-family="Arial, sans-serif" font-size="18" fill="#FFFFFF" text-anchor="middle" opacity="0.8" letter-spacing="3">SHOT ANALYZER</text>
+</svg>

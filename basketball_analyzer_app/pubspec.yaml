@@ -1,5 +1,5 @@
 name: basketball_analyzer
-description: Basketball shot analyzer with AI detection and cross-platform support
+description: BASANS - Basketball Shot Analyzer with AI detection
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -43,3 +43,4 @@ flutter:
 
   assets:
     - assets/models/
+    - assets/logo.svg
