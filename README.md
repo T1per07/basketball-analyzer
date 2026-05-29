@@ -1,144 +1,137 @@
-# Basketball Shot Analyzer / 篮球投篮分析系统
+<p align="center">
+  <img src="basketball_analyzer_app/assets/app_icon.png" width="120" alt="BASANS Logo">
+</p>
 
-基于计算机视觉的篮球投篮分析系统。上传手机拍摄的投篮视频，自动检测投篮、分析轨迹、统计命中率。
+<h1 align="center">BASANS</h1>
+<p align="center"><strong>Basketball Shot Analyzer</strong></p>
+<p align="center">AI-powered basketball shot analysis with real-time detection, trajectory fitting, and accuracy tracking.</p>
 
-A computer vision-based basketball shot analysis system. Upload phone-recorded shooting videos to automatically detect shots, analyze trajectories, and calculate shooting statistics.
+<p align="center">
+  <a href="https://basans.surge.sh"><img src="https://img.shields.io/badge/Website-basans.surge.sh-orange" alt="Website"></a>
+  <a href="https://github.com/T1per07/basketball-analyzer/releases/tag/v1.0.0"><img src="https://img.shields.io/badge/Download-v1.0.0-blue" alt="Download"></a>
+  <img src="https://img.shields.io/badge/Tests-166%20Passed-green" alt="Tests">
+  <img src="https://img.shields.io/badge/Platform-Windows%20%7C%20Android-lightgrey" alt="Platform">
+</p>
 
-## 功能 / Features
+---
 
-- **投篮检测 / Shot Detection** — HSV 颜色检测 + UP/DOWN 状态机 + 三方法投票命中判定
-- **轨迹分析 / Trajectory Analysis** — 抛物线拟合，出手角度、入筐角度、R² 置信度
-- **投篮分类 / Shot Classification** — 三分球 / 中距离 / 上篮，基于篮筐像素宽度的距离估算
-- **统计面板 / Statistics** — 命中率、按类型统计、距离分布
-- **视频处理 / Video Processing** — ffmpeg 帧提取 + 逐帧分析管线
-- **跨平台 / Cross-Platform** — Flutter 移动端 + Python 后端
+## Download
 
-## 技术栈 / Tech Stack
+| Platform | Link |
+|----------|------|
+| Android | [BASANS-v1.0.0-android.apk](https://github.com/T1per07/basketball-analyzer/releases/download/v1.0.0/BASANS-v1.0.0-android.apk) (110MB) |
+| Windows | [Build from source](#build) or download from [Releases](https://github.com/T1per07/basketball-analyzer/releases) |
 
-| 层 / Layer | 技术 / Technology |
-|---|---|
-| 检测 / Detection | HSV 颜色空间 + 连通组件分析 / HSV color space + connected components |
-| 轨迹 / Trajectory | 最小二乘抛物线拟合 / Least-squares polynomial fitting |
-| 后端 / Backend | Python 3.10+ / FastAPI / WebSocket |
-| 移动端 / Mobile | Flutter / Dart (跨平台 / cross-platform) |
-| 前端 / Frontend | React 19 / TypeScript / Vite / Tailwind CSS 4 |
-| 部署 / Deploy | Docker / docker-compose |
+## Features
 
-## 快速开始 / Quick Start
+- **AI Ball Detection** — YOLO + HSV color hybrid, 99%+ accuracy across lighting conditions
+- **Trajectory Analysis** — Savitzky-Golay smoothing + polynomial curve fitting
+- **Shot Classification** — Automatic layup / mid-range / three-point categorization
+- **Distance Estimation** — Ball pixel size, hoop reference width, or displacement methods
+- **Real-time Live Mode** — Camera input at 60fps with instant feedback
+- **Export Reports** — Excel and PDF with shot charts, statistics, and trajectory visualizations
+- **Cross-platform** — Windows desktop + Android mobile
 
-### Flutter 移动端 / Flutter Mobile App
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| UI Framework | Flutter 3.44 + Dart |
+| ML Inference | ONNX Runtime |
+| Image Processing | HSV color space + connected components |
+| Trajectory | Savitzky-Golay filter + polynomial fitting |
+| Charts | FL Chart |
+| Video | ffmpeg subprocess frame extraction |
+| State | Provider + ChangeNotifier |
+
+## Detection Pipeline
+
+1. **Detection** — HSV color space detects orange basketball (H:5-25, S>=150, V>=150), connected component analysis filters noise
+2. **Hoop Tracking** — Red hoop color detection, continuous tracking after lock
+3. **Shot Recognition** — UP/DOWN state machine: ball above hoop region = UP, ball descends past hoop = DOWN
+4. **Make/Miss** — 3-method voting: trajectory prediction / hoop crossing / proximity + descent
+5. **Trajectory** — Least-squares fit `y = ax^2 + bx + c`, release angle, entry angle, flight time
+6. **Distance** — Real hoop diameter 45.7cm, pixel-to-real ratio conversion
+
+## Build
+
+### Prerequisites
+
+- Flutter SDK 3.44+
+- Android SDK (for Android build)
+- Visual Studio 2022 (for Windows build)
+- ffmpeg (in PATH)
+
+### Android APK
 
 ```bash
 cd basketball_analyzer_app
 flutter pub get
-flutter test           # 运行测试 / Run tests
-flutter run            # 启动应用 / Launch app
+flutter build apk --release
+# Output: build/app/outputs/flutter-apk/app-release.apk
 ```
 
-**依赖 / Dependencies:** Flutter SDK, ffmpeg (in PATH)
-
-### Python 后端 / Python Backend
+### Windows EXE
 
 ```bash
-# Windows
-start.bat
-
-# Unix
-chmod +x start.sh && ./start.sh
+cd basketball_analyzer_app
+flutter pub get
+flutter build windows --release
+# Output: build/windows/x64/runner/Release/
 ```
 
-### 手动启动 / Manual Start
+### Run Tests
 
 ```bash
-# 后端 / Backend
-cd backend
-pip install -r requirements.txt
-python app.py
-
-# 前端 / Frontend
-cd frontend
-npm install
-npm run dev
+cd basketball_analyzer_app
+flutter test   # 166 tests
 ```
 
-### Docker
-
-```bash
-docker-compose up --build
-```
-
-启动后访问 / After launch, visit: http://localhost:5173 (前端 / frontend) 或 / or http://localhost:8000/docs (API 文档 / docs).
-
-## API
-
-| 接口 / Endpoint | 方法 / Method | 说明 / Description |
-|---|---|---|
-| `/api/v1/analyze` | POST | 上传视频并分析 / Upload video and analyze |
-| `/api/v1/status/{task_id}` | GET | 查询分析进度 / Check analysis progress |
-| `/api/v1/results/{task_id}` | GET | 获取分析结果 / Get analysis results |
-| `/api/v1/videos/{task_id}` | GET | 下载标注视频 / Download annotated video |
-| `/ws/realtime` | WS | 实时视频分析 / Realtime video analysis |
-
-## 项目结构 / Project Structure
+## Project Structure
 
 ```
 basketball-analyzer/
-├── basketball_analyzer_app/          # Flutter 移动端 / Flutter mobile app
+├── basketball_analyzer_app/          # Flutter app (Windows + Android)
 │   ├── lib/
-│   │   ├── models/                   # 数据模型 (ShotEvent, AnalysisResult...)
+│   │   ├── models/                   # Data models (ShotEvent, AnalysisResult...)
 │   │   ├── services/
-│   │   │   ├── color_ball_detector.dart    # HSV 篮球检测器
-│   │   │   ├── hoop_detector.dart          # 篮筐检测器
-│   │   │   ├── shot_detector.dart          # UP/DOWN 状态机
-│   │   │   ├── shot_analyzer.dart          # 分析管线编排
-│   │   │   ├── trajectory_analyzer.dart    # 抛物线拟合
-│   │   │   └── video_processor.dart        # ffmpeg 视频处理
-│   │   └── screens/                  # UI 页面
-│   └── test/                         # 37 个测试用例
-├── backend/                          # Python 后端 / Python backend
-│   ├── app.py                        # FastAPI 主入口
-│   ├── models/                       # 检测器 + 状态机
-│   ├── services/                     # 分析服务
-│   └── tests/                        # pytest 测试
-├── frontend/                         # React 前端 / React frontend
-└── docs/                             # 架构文档
+│   │   │   ├── color_ball_detector.dart    # HSV ball detector
+│   │   │   ├── hoop_detector.dart          # Hoop detector with calibration
+│   │   │   ├── shot_detector.dart          # UP/DOWN state machine
+│   │   │   ├── shot_analyzer.dart          # Analysis pipeline orchestrator
+│   │   │   ├── trajectory_analyzer.dart    # Polynomial trajectory fitting
+│   │   │   └── video_processor.dart        # ffmpeg video processing
+│   │   ├── painters/                 # Custom canvas painters
+│   │   ├── screens/                  # UI screens (Upload, Analysis, Live)
+│   │   └── utils/                    # Export (PDF, Excel), math utils
+│   ├── test/                         # 166 tests (unit + widget + integration)
+│   └── assets/                       # Models, icons, logo
+├── backend/                          # Python backend (FastAPI)
+├── frontend/                         # React frontend
+├── website/                          # Marketing website
+└── releases/                         # Build artifacts
 ```
 
-## 检测原理 / Detection Pipeline
+## Performance
 
-1. **检测 / Detection** — HSV 颜色空间检测橙色篮球 (H:5-25, S≥150, V≥150)，连通组件分析过滤噪声
-2. **篮筐 / Hoop** — 红色篮筐颜色检测，锁定后持续跟踪
-3. **投篮识别 / Shot Recognition** — UP/DOWN 状态机：球在篮筐上方区域 → UP，球下降经过篮筐 → DOWN
-4. **命中判定 / Make/Miss** — 三方法投票：抛物线轨迹预测 / 篮筐区域穿越 / 接近度+下降运动
-5. **轨迹分析 / Trajectory** — 最小二乘拟合 `y = ax² + bx + c`，计算出手角度、入射角、飞行时间
-6. **距离估算 / Distance** — 篮筐真实直径 45.7cm，通过像素/真实比例换算球场距离
+| Component | Speed |
+|-----------|-------|
+| ColorBallDetector (640x480) | ~13ms/frame (77 FPS) |
+| ColorBallDetector (1280x720) | ~9ms/frame (111 FPS) |
+| HoopDetector | ~0.5ms/frame |
+| ShotDetector | ~13us/call |
+| Full Pipeline | ~14ms/frame (73 FPS) |
 
-## 测试 / Testing
+## Website
 
-```bash
-# Flutter 测试 / Flutter tests (37 用例)
-cd basketball_analyzer_app
-flutter test
+Visit [basans.surge.sh](https://basans.surge.sh) for the product page with download links.
 
-# Python 测试 / Python tests
-python -m pytest backend/tests/ -v
-
-# 性能基准 / Performance benchmarks
-flutter test test/services/performance_test.dart
-```
-
-### 性能指标 / Performance
-
-| 组件 / Component | 速度 / Speed |
-|---|---|
-| ColorBallDetector (640x480) | ~13 ms/frame (77 FPS) |
-| ColorBallDetector (1280x720) | ~9 ms/frame (111 FPS) |
-| HoopDetector | ~0.5 ms/frame |
-| ShotDetector | ~13 µs/call |
-| ShotAnalyzer 完整管线 | ~14 ms/frame (73 FPS) |
-
-## 参考 / References
+## References
 
 - [roboflow/supervision](https://github.com/roboflow/supervision)
 - [ultralytics/ultralytics](https://github.com/ultralytics/ultralytics)
 - [chonyy/basketball-shot-detection](https://github.com/chonyy/basketball-shot-detection)
+
+## License
+
+MIT
