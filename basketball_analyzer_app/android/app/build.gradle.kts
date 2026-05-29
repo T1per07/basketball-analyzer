@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "com.example.basketball_analyzer"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
