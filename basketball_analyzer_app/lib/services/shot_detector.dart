@@ -187,7 +187,8 @@ class ShotDetector {
     if (_methodBCrossing(hcx, hcy, hw, hh)) votes++;
     if (_methodCProximityDown(hcx, hcy, hw, hh)) votes++;
 
-    return votes >= 2;
+    // UP→DOWN 已确认投篮，1 票即可确认命中
+    return votes >= 1;
   }
 
   /// 方法 A: 抛物线轨迹预测 — 预测球在篮筐高度的 X 位置
@@ -287,7 +288,7 @@ class ShotDetector {
 
     for (final ai in above) {
       for (final bi in below) {
-        if (bi <= ai || bi - ai > 15) continue;
+        if (bi <= ai || bi - ai > 10) continue;
         bool valid = true;
         for (int k = ai; k <= bi; k++) {
           if ((recent[k].$1 - hcx).abs() > hw * 2.0) {
