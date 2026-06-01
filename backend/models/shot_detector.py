@@ -192,9 +192,9 @@ class ShotDetector:
         hw = self._hoop_pos[-1][3]
         hh = self._hoop_pos[-1][4]
 
-        # 放宽范围：x ± 8*hw，y 在篮筐上方
-        x1 = hcx - 8 * hw
-        x2 = hcx + 8 * hw
+        # 收紧范围：x ± 3*hw，y 在篮筐上方
+        x1 = hcx - 3 * hw
+        x2 = hcx + 3 * hw
         y1 = hcy - 3 * hh
         y2 = hcy - 0.3 * hh
 
@@ -239,7 +239,8 @@ class ShotDetector:
         if self._method_c_proximity_down(hcx, hcy, hw, hh):
             votes += 1
 
-        return votes >= 2
+        # UP→DOWN 已确认投篮，1 票即可确认命中
+        return votes >= 1
 
     def _method_a_trajectory(self, hcx, hcy, hw, hh) -> bool:
         """方法 A: 抛物线轨迹预测
@@ -291,15 +292,14 @@ class ShotDetector:
 
     def _check_rim_hit(self, predicted_x, hcx, hw) -> bool:
         """检查预测 X 是否在篮筐开口内"""
-        # 放宽到 0.6 * hw
         rim_x1 = hcx - 0.6 * hw
         rim_x2 = hcx + 0.6 * hw
 
         if rim_x1 < predicted_x < rim_x2:
             return True
 
-        # 弹跳区域 ±20px
-        if rim_x1 - 20 < predicted_x < rim_x2 + 20:
+        # 弹跳区域 ±10px（收紧）
+        if rim_x1 - 10 < predicted_x < rim_x2 + 10:
             return True
 
         return False
@@ -314,7 +314,7 @@ class ShotDetector:
 
         recent = self._ball_pos[-20:]
         for i, (x, y, frame, w, h, conf) in enumerate(recent):
-            if abs(x - hcx) < hw * 3.0:
+            if abs(x - hcx) < hw * 1.5:
                 if y < rim_top:
                     above.append(i)
                 elif y > rim_bottom:
@@ -322,11 +322,11 @@ class ShotDetector:
 
         for ai in above:
             for bi in below:
-                if bi <= ai or bi - ai > 15:
+                if bi <= ai or bi - ai > 10:
                     continue
                 valid = True
                 for k in range(ai, bi + 1):
-                    if abs(recent[k][0] - hcx) > hw * 4.0:
+                    if abs(recent[k][0] - hcx) > hw * 2.0:
                         valid = False
                         break
                 if valid:
@@ -336,8 +336,8 @@ class ShotDetector:
 
     def _method_c_proximity_down(self, hcx, hcy, hw, hh) -> bool:
         """方法 C: 球在篮筐区域内 + 向下运动"""
-        rim_left = hcx - 1.5 * hw
-        rim_right = hcx + 1.5 * hw
+        rim_left = hcx - 1.0 * hw
+        rim_right = hcx + 1.0 * hw
         rim_top = hcy - 1.0 * hh
         rim_bottom = hcy + 1.0 * hh
 
@@ -388,12 +388,9 @@ class ShotDetector:
                 self._down = False
                 return None
 
-            # 多方法投票（UP→DOWN 已经是有效的投篮模式检测）
-            # 当投票方法过于保守时，信任状态机的 UP→DOWN 判断
+            # 多方法投票 — 需要至少 1 种方法确认命中
+            # UP→DOWN 确认投篮发生，但命中需要投票验证
             made = self._check_score()
-            if not made:
-                # UP→DOWN 状态机已经确认了投篮模式，默认为命中
-                made = True
 
             # 计算角度
             entry_angle, release_angle = self._compute_angles()
