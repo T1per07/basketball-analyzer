@@ -3,15 +3,15 @@ import '../models/shot_event.dart';
 import '../models/config.dart';
 import '../utils/math_utils.dart';
 
-/// 投篮检测器 v3 — UP/DOWN 状态机 + 3方法投票
+/// 投篮检测器 v4 — UP/DOWN 状态机 + 3方法投票
 /// 对齐 Python backend/models/shot_detector.py
 ///
 /// 核心逻辑：
-/// 1. UP 检测：球出现在篮筐上方区域
+/// 1. UP 检测：球出现在篮筐上方区域（收紧范围）
 /// 2. DOWN 检测：球下降到篮筐下方
-/// 3. UP→DOWN 确认投篮事件
+/// 3. UP→DOWN 确认投篮事件（需最小轨迹长度）
 /// 4. 3 方法投票判定命中/未中（任意 2 票确认）
-/// 5. 投票失败时信任 UP→DOWN 状态机（默认命中）
+/// 5. 投票失败 → 判定为未中（不再强制命中）
 class ShotDetector {
   double _fps;
   int _frameCount = 0;
@@ -97,9 +97,9 @@ class ShotDetector {
       final area = i < ballSizes.length ? ballSizes[i] : 0.0;
       final conf = i < ballConfs.length ? ballConfs[i] : 0.5;
 
-      // 置信度过滤（篮筐附近放宽）
+      // 置信度过滤（提高阈值，减少噪声误检）
       final inHoop = _inHoopRegion(cx, cy, hoopCx, hoopCy, hoopW, hoopH);
-      if (conf < 0.25 && !(inHoop && conf > 0.1)) continue;
+      if (conf < 0.5 && !(inHoop && conf > 0.35)) continue;
 
       // 距离过滤 — 丢弃距上一帧过远的检测（噪声）
       if (_ballPos.isNotEmpty) {
@@ -151,9 +151,9 @@ class ShotDetector {
     final hw = _hoopPos.last.$4;
     final hh = _hoopPos.last.$5;
 
-    // 放宽范围：x ± 8*hw，y 在篮筐上方
-    final x1 = hcx - 8 * hw;
-    final x2 = hcx + 8 * hw;
+    // 收紧范围：x ± 3*hw，y 在篮筐上方（减少远距离误检）
+    final x1 = hcx - 3 * hw;
+    final x2 = hcx + 3 * hw;
     final y1 = hcy - 3 * hh;
     final y2 = hcy - 0.3 * hh;
 
@@ -256,8 +256,8 @@ class ShotDetector {
 
     if (rimX1 < predictedX && predictedX < rimX2) return true;
 
-    // 弹跳区域 ±20px
-    if (rimX1 - 20 < predictedX && predictedX < rimX2 + 20) return true;
+    // 弹跳区域 ±10px（收紧）
+    if (rimX1 - 10 < predictedX && predictedX < rimX2 + 10) return true;
 
     return false;
   }
@@ -276,7 +276,7 @@ class ShotDetector {
 
     for (int i = 0; i < recent.length; i++) {
       final (x, y, _, _, _, _) = recent[i];
-      if ((x - hcx).abs() < hw * 3.0) {
+      if ((x - hcx).abs() < hw * 1.5) {
         if (y < rimTop) {
           above.add(i);
         } else if (y > rimBottom) {
@@ -290,7 +290,7 @@ class ShotDetector {
         if (bi <= ai || bi - ai > 15) continue;
         bool valid = true;
         for (int k = ai; k <= bi; k++) {
-          if ((recent[k].$1 - hcx).abs() > hw * 4.0) {
+          if ((recent[k].$1 - hcx).abs() > hw * 2.0) {
             valid = false;
             break;
           }
@@ -304,10 +304,10 @@ class ShotDetector {
 
   /// 方法 C: 球在篮筐区域内 + 向下运动
   bool _methodCProximityDown(double hcx, double hcy, double hw, double hh) {
-    final rimLeft = hcx - 1.5 * hw;
-    final rimRight = hcx + 1.5 * hw;
-    final rimTop = hcy - 1.0 * hh;
-    final rimBottom = hcy + 1.0 * hh;
+    final rimLeft = hcx - 1.0 * hw;
+    final rimRight = hcx + 1.0 * hw;
+    final rimTop = hcy - 0.8 * hh;
+    final rimBottom = hcy + 0.8 * hh;
 
     final inRim = <(double, double)>[];
     final recent = _ballPos.length > 15
@@ -323,7 +323,7 @@ class ShotDetector {
     if (inRim.length < 2) return false;
 
     for (int i = 1; i < inRim.length; i++) {
-      if (inRim[i].$2 > inRim[i - 1].$2 + 1) return true;
+      if (inRim[i].$2 > inRim[i - 1].$2 + 3) return true;
     }
 
     return false;
@@ -331,8 +331,14 @@ class ShotDetector {
 
   // ===== 主检测逻辑（对齐 Python _shot_detection） =====
 
+  // 最小轨迹长度：至少 8 帧连续球位置才允许触发投篮检测
+  static const _minTrackLengthForShot = 8;
+
   ShotResult? _shotDetection() {
     if (_hoopPos.isEmpty || _ballPos.isEmpty) return null;
+
+    // 轨迹长度不足时不触发检测（防止 1-2 帧噪声误触发）
+    if (_ballPos.length < _minTrackLengthForShot) return null;
 
     // 步骤 1: 检测 UP
     if (!_up) {
@@ -363,12 +369,8 @@ class ShotDetector {
         return null;
       }
 
-      // 3 方法投票
-      bool made = _checkScore();
-      if (!made) {
-        // UP→DOWN 状态机已确认投篮模式，默认为命中
-        made = true;
-      }
+      // 3 方法投票 — 投票失败则判定为未中
+      final made = _checkScore();
 
       final (entryAngle, releaseAngle) = _computeAngles();
       final hcx = _hoopPos.last.$1;

@@ -28,8 +28,13 @@ class _UploadScreenState extends State<UploadScreen> {
 
   Future<void> _checkOnnx() async {
     try {
-      final exeDir = File(Platform.resolvedExecutable).parent.path;
-      final modelPath = '$exeDir/data/flutter_assets/assets/models/best.onnx';
+      String? modelPath;
+      // 桌面端：从文件系统加载模型
+      if (!Platform.isAndroid && !Platform.isIOS) {
+        final exeDir = File(Platform.resolvedExecutable).parent.path;
+        modelPath = '$exeDir/data/flutter_assets/assets/models/best.onnx';
+      }
+      // 移动端：modelPath 为 null，ONNX 会自动从 asset 加载
       final available = await _processor.enableOnnx(modelPath: modelPath);
       if (mounted) {
         setState(() => _onnxAvailable = available);

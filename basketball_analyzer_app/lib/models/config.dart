@@ -51,8 +51,8 @@ class DetectionConfig {
   final double motionThreshold;
 
   const DetectionConfig({
-    this.ballConfidenceThreshold = 0.1,
-    this.hoopConfidenceThreshold = 0.2,
+    this.ballConfidenceThreshold = 0.45, // 提高球检测置信度
+    this.hoopConfidenceThreshold = 0.4, // 提高篮筐检测置信度
     this.playerConfidenceThreshold = 0.3,
     this.inputWidth = 416,
     this.yoloInterval = 10,
@@ -92,14 +92,14 @@ class ShotDetectionConfig {
   final double confidenceLow;
 
   const ShotDetectionConfig({
-    this.minShotFrames = 2,
+    this.minShotFrames = 8, // 最小轨迹帧数（防止噪声误触发）
     this.maxShotFrames = 120,
     this.shotCooldownFrames = 10,
-    this.trajectoryRSquaredThreshold = 0.20,
+    this.trajectoryRSquaredThreshold = 0.35, // 提高轨迹拟合要求
     this.cooldownFpsRatio = 0.3,
-    this.cooldownMinFrames = 5,
-    this.confidenceHigh = 0.45,
-    this.confidenceLow = 0.25,
+    this.cooldownMinFrames = 8, // 增加冷却期
+    this.confidenceHigh = 0.6,
+    this.confidenceLow = 0.4,
   });
 }
 

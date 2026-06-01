@@ -24,7 +24,7 @@ class OnnxDetector {
   static const int classHoop = 1;
 
   OnnxDetector({
-    this.confThreshold = 0.25,
+    this.confThreshold = 0.45,
     this.nmsThreshold = 0.45,
     int inputSize = 640,
   })  : _inputSize = inputSize,

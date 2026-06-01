@@ -198,9 +198,10 @@ class OptimizedCombinedDetector:
                 import logging
                 logging.warning(f"YOLO 检测异常: {e}")
 
-        # 篮筐降级检测（每 10 帧，仅在模型未检测到时）
+        # 篮筐降级检测 — 校准前每帧，校准后每 10 帧
         if hoop_box is None:
-            if frame_index % 10 == 0:
+            run_hoop = (not self._hoop_detector.is_calibrated) or (frame_index % 10 == 0)
+            if run_hoop:
                 self._hoop_detector.detect(frame)
             hoop_position = self._hoop_detector.hoop_position
             hoop_box = self._hoop_detector.hoop_box

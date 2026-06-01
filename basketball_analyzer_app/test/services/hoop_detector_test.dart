@@ -46,7 +46,7 @@ void main() {
     });
 
     test('calibrates after enough frames with hoop', () {
-      for (int i = 0; i < 15; i++) {
+      for (int i = 0; i < 20; i++) {
         final frame = _makeFrameWithHoop(hoopX: 320, hoopY: 150);
         detector.detect(frame, 640, 480);
       }
@@ -70,7 +70,7 @@ void main() {
 
     test('tracks hoop position after calibration', () {
       // Calibrate
-      for (int i = 0; i < 15; i++) {
+      for (int i = 0; i < 20; i++) {
         final frame = _makeFrameWithHoop(hoopX: 320, hoopY: 150);
         detector.detect(frame, 640, 480);
       }
@@ -92,7 +92,7 @@ void main() {
     });
 
     test('reset clears calibration state', () {
-      for (int i = 0; i < 15; i++) {
+      for (int i = 0; i < 20; i++) {
         final frame = _makeFrameWithHoop(hoopX: 320, hoopY: 150);
         detector.detect(frame, 640, 480);
       }

@@ -9,7 +9,7 @@ import cv2
 import numpy as np
 import supervision as sv
 
-from services.optimized_shot_analyzer import OptimizedShotAnalyzer as ShotAnalyzer, AnalysisResult
+from services.hybrid_shot_analyzer import HybridShotAnalyzer as ShotAnalyzer, AnalysisResult
 from config.settings import config
 from utils.logger import logger, performance_monitor
 
@@ -72,7 +72,7 @@ class VideoProcessor:
     """视频处理器 — 线程化读帧 + Supervision 标注"""
 
     def __init__(self, fps: float = 30.0):
-        self.analyzer = ShotAnalyzer(fps=fps)
+        self.analyzer = ShotAnalyzer(fps=fps, onnx_interval=5)
 
         # Annotators
         self._trace_annotator = sv.TraceAnnotator(

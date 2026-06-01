@@ -33,6 +33,12 @@ dependencies:
   camera: ^0.11.0
   flutter_onnxruntime: ^1.7.1
 
+  # FFmpeg (Android/iOS video processing)
+  ffmpeg_kit_flutter_full: ^6.0.3
+
+  # Google Fonts
+  google_fonts: ^6.2.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

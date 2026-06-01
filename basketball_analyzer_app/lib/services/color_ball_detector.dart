@@ -4,14 +4,14 @@ import 'dart:typed_data';
 /// 基于 HSV 颜色空间的篮球检测器
 /// 对应 Python models/detection.py ColorBallDetector
 class ColorBallDetector {
-  // 橙色篮球 HSV 范围（对齐 Python ColorBallDetector）
-  // 范围 1: H=5-22, S=100-255, V=100-255 (标准橙色)
-  // 范围 2: H=0-8, S=120-255, V=120-255 (偏红橙，暖光下)
-  static const _hMin = 5, _hMax = 22;
-  static const _sMin = 100, _vMin = 100;
+  // 橙色篮球 HSV 范围（收紧 — 减少木地板/肤色/灯光误检）
+  // 范围 1: H=8-20, S=140-255, V=140-255 (标准橙色，更窄)
+  // 范围 2: H=0-8, S=160-255, V=140-255 (偏红橙，暖光下，更严格)
+  static const _hMin = 8, _hMax = 20;
+  static const _sMin = 140, _vMin = 140;
   // 第二组范围（暖光偏红）
   static const _h2Max = 8;
-  static const _s2Min = 120, _v2Min = 120;
+  static const _s2Min = 160, _v2Min = 140;
   static const _targetWidth = 320;
 
   // Pre-allocated buffers for connected components analysis.
@@ -132,9 +132,12 @@ class ColorBallDetector {
       }
     }
 
-    // 步骤 3: 过滤 — 面积、宽高比（对齐 Python）
+    // 步骤 2.5: 形态学开运算 — 去除小噪点
+    _morphOpen(mask, sw, sh);
+
+    // 步骤 3: 过滤 — 面积、宽高比（收紧最小面积）
     final totalPixels = sw * sh;
-    final minArea = max(50, (totalPixels * 0.0005).round());
+    final minArea = max(80, (totalPixels * 0.001).round());
     final maxArea = (totalPixels * 0.015).round();
     final results = <(double, double, double, double, double)>[];
 
@@ -152,9 +155,9 @@ class ColorBallDetector {
 
       // 填充率：area / (bw * bh)
       final fillRatio = area / (bw * bh);
-      if (fillRatio < 0.3) continue; // 太稀疏
+      if (fillRatio < 0.45) continue; // 太稀疏
 
-      final conf = min(0.4 + fillRatio * 0.3 + (area / maxArea) * 0.2, 0.9);
+      final conf = min(0.5 + fillRatio * 0.3 + (area / maxArea) * 0.15, 0.9);
       results.add((
         bb[0] / scale,
         bb[1] / scale,

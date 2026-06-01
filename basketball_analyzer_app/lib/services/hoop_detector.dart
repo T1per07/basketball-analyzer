@@ -7,8 +7,8 @@ class HoopDetector {
   bool _calibrated = false;
   (int, int, int, int)? _hoopBox; // x, y, w, h
   (int, int, int, int)? _lockedBox;
-  static const _calibFrames = 12;
-  static const _calibMaxAttempts = 60; // 超时：60帧未完成校准则放弃
+  static const _calibFrames = 18; // 增加校准帧数要求（更可靠的锁定）
+  static const _calibMaxAttempts = 90; // 超时：90帧未完成校准则放弃
   int _calibAttemptCount = 0;
 
   // Pre-allocated buffers for connected components analysis in
@@ -72,9 +72,13 @@ class HoopDetector {
     final medY = ys[ys.length ~/ 2];
 
     final filtered = _calibrationBuffer
-        .where((b) => (b.$1 - medX).abs() < 100 && (b.$2 - medY).abs() < 80)
+        .where((b) => (b.$1 - medX).abs() < 60 && (b.$2 - medY).abs() < 50)
         .toList();
-    final use = filtered.isNotEmpty ? filtered : _calibrationBuffer;
+    // 要求至少 60% 的校准帧通过一致性检查
+    final use = filtered.length >= _calibrationBuffer.length * 0.6
+        ? filtered
+        : <(int, int, int, int)>[];
+    if (use.isEmpty) return;
 
     final avgX = _median(use.map((b) => b.$1).toList());
     final avgY = _median(use.map((b) => b.$2).toList());
@@ -119,7 +123,7 @@ class HoopDetector {
       final cx = bx + bw ~/ 2;
       final cy = by + bh ~/ 2;
       final dist = (cx - lcX) * (cx - lcX) + (cy - lcY) * (cy - lcY);
-      final maxDist = (lw * 0.6) * (lw * 0.6);
+      final maxDist = (lw * 0.4) * (lw * 0.4);
 
       if (dist < maxDist) {
         if (bw < 12 || bh < 6) return hoopPosition;
@@ -266,13 +270,17 @@ class HoopDetector {
   }
 
   /// 检查 RGB 是否在篮筐颜色范围内（红/橙红）
-  /// 注意排除篮球橙色（G>80）以避免颜色污染
+  /// 注意排除篮球橙色（G>70）以避免颜色污染
+  /// 收紧条件：要求更高的 R 值和更低的 G/B 比值
   bool _isHoopColor(int r, int g, int b) {
     // 篮筐红色：R 高，G 低，B 低
-    // 排除篮球橙色：篮球 G~110，篮筐 G~45
-    if (g > 80) return false; // 排除篮球橙色
-    if (r > 120 && r > g * 1.3 && b < 150) return true;
-    if (r > 150 && g > 40 && g < 80 && b < 100) return true;
+    // 排除篮球橙色、肤色、木地板
+    if (g > 70) return false; // 排除篮球橙色
+    if (b > 100) return false; // 排除紫色/粉色干扰
+    // 严格红色：R > 140, R > G * 1.5
+    if (r > 140 && r > g * 1.5 && b < 80) return true;
+    // 深红色：R > 160, G < 60
+    if (r > 160 && g < 60 && b < 70) return true;
     return false;
   }
 

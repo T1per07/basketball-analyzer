@@ -49,8 +49,11 @@ class _LiveScreenState extends State<LiveScreen> {
 
   Future<void> _checkOnnx() async {
     try {
-      final exeDir = File(Platform.resolvedExecutable).parent.path;
-      final modelPath = '$exeDir/data/flutter_assets/assets/models/best.onnx';
+      String? modelPath;
+      if (!Platform.isAndroid && !Platform.isIOS) {
+        final exeDir = File(Platform.resolvedExecutable).parent.path;
+        modelPath = '$exeDir/data/flutter_assets/assets/models/best.onnx';
+      }
       final available = await _processor.enableOnnx(modelPath: modelPath);
       if (mounted) {
         setState(() => _onnxAvailable = available);

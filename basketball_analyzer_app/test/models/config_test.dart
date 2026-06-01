@@ -86,7 +86,7 @@ void main() {
 
   group('AppConfig — default config singletons', () {
     test('detection config has reasonable defaults', () {
-      expect(AppConfig.detection.ballConfidenceThreshold, 0.1);
+      expect(AppConfig.detection.ballConfidenceThreshold, 0.45);
       expect(AppConfig.detection.maxBallsPerFrame, 3);
     });
 
