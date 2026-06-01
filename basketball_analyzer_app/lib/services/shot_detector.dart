@@ -141,9 +141,9 @@ class ShotDetector {
 
   // ===== UP/DOWN 状态机（对齐 Python） =====
 
-  /// UP 检测：球在篮筐上方区域（放宽范围）
+  /// UP 检测：球在篮筐上方 + 有上升运动
   bool _detectUp() {
-    if (_ballPos.isEmpty || _hoopPos.isEmpty) return false;
+    if (_ballPos.length < 3 || _hoopPos.isEmpty) return false;
 
     final (bx, by, _, _, _, _) = _ballPos.last;
     final hcx = _hoopPos.last.$1;
@@ -151,13 +151,19 @@ class ShotDetector {
     final hw = _hoopPos.last.$4;
     final hh = _hoopPos.last.$5;
 
-    // 收紧范围：x ± 3*hw，y 在篮筐上方（减少远距离误检）
+    // 范围：x ± 3*hw，y 在篮筐上方
     final x1 = hcx - 3 * hw;
     final x2 = hcx + 3 * hw;
     final y1 = hcy - 3 * hh;
     final y2 = hcy - 0.3 * hh;
 
-    return x1 < bx && bx < x2 && y1 < by && by < y2;
+    if (!(x1 < bx && bx < x2 && y1 < by && by < y2)) return false;
+
+    // 验证上升运动：最近 3 帧球的 Y 坐标应递减（屏幕坐标 Y 向下）
+    final y0 = _ballPos[_ballPos.length - 3].$2;
+    final y1p = _ballPos[_ballPos.length - 2].$2;
+    final y2p = _ballPos[_ballPos.length - 1].$2;
+    return y0 > y1p && y1p > y2p;
   }
 
   /// DOWN 检测：球在篮筐下方
@@ -370,6 +376,13 @@ class ShotDetector {
         return null;
       }
 
+      // 弧线验证：UP→DOWN 之间必须有最高点
+      if (!_hasApexBetween(_upFrame, _downFrame)) {
+        _up = false;
+        _down = false;
+        return null;
+      }
+
       // 3 方法投票 — 投票失败则判定为未中
       final made = _checkScore();
 
@@ -418,6 +431,22 @@ class ShotDetector {
       }
     }
     return 2 <= minIdx && minIdx <= ys.length - 3;
+  }
+
+  /// 验证 UP→DOWN 之间轨迹有最高点（弧线）
+  bool _hasApexBetween(int upFrame, int downFrame) {
+    final segment = _ballPos.where((p) => p.$3 >= upFrame && p.$3 <= downFrame).toList();
+    if (segment.length < 3) return false;
+    final ys = segment.map((p) => p.$2).toList();
+    double minY = ys[0];
+    int minIdx = 0;
+    for (int i = 1; i < ys.length; i++) {
+      if (ys[i] < minY) {
+        minY = ys[i];
+        minIdx = i;
+      }
+    }
+    return 1 <= minIdx && minIdx <= ys.length - 2;
   }
 
   double _computeShotConfidence() {

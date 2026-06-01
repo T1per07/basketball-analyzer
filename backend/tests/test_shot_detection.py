@@ -49,14 +49,20 @@ class TestShotDetectorStateMachine:
 
     def test_basic_make(self, sd_with_hoop):
         sd = sd_with_hoop
-        # 模拟投篮：球从上方经过篮筐到下方
+        # 模拟投篮：球从下方上升到篮筐上方，再下降穿过篮筐
+        # 篮筐中心 (300, 200)，UP zone: y 在 110~191
         frames = [
-            # 球在 UP zone（篮筐上方）
-            (300, 120), (310, 130), (305, 140),
-            # 球在篮筐附近
-            (300, 190), (298, 200),
+            # 球上升阶段（Y 递减 = 向上）
+            (300, 280), (300, 260), (300, 240),
+            (300, 220), (300, 200),
+            # 球在 UP zone（篮筐上方，Y 继续递减）
+            (300, 170), (300, 150), (300, 130),
+            # 球到达最高点后下降
+            (300, 120), (300, 125),
+            # 球下降穿过篮筐区域
+            (300, 160), (300, 190),
             # 球在 DOWN zone（篮筐下方）
-            (300, 230), (305, 250),
+            (300, 220), (300, 240),
         ]
         for i, (x, y) in enumerate(frames):
             sd.process_frame([(x, y)], [200.0], [0.8], frame_index=i * 3)
@@ -66,23 +72,37 @@ class TestShotDetectorStateMachine:
 
     def test_cooldown_prevents_double_count(self, sd_with_hoop):
         sd = sd_with_hoop
-        # 第一次投篮（frame 0-18）
-        for i in range(7):
-            y = 120 + i * 20
-            sd.process_frame([(300, y)], [200.0], [0.8], frame_index=i * 3)
+        # 第一次投篮
+        shot_frames = [
+            (300, 280), (300, 260), (300, 240),
+            (300, 220), (300, 200),
+            (300, 170), (300, 150), (300, 130),
+            (300, 120), (300, 125),
+            (300, 160), (300, 190),
+            (300, 220), (300, 240),
+        ]
+        for i, (x, y) in enumerate(shot_frames):
+            sd.process_frame([(x, y)], [200.0], [0.8], frame_index=i * 3)
 
-        shots_after_first = sd.total_shots
-        assert shots_after_first >= 1, "第一次投篮应被检测到"
+        assert sd.total_shots >= 1, "第一次投篮应被检测到"
+        first_shot_frame = sd._last_shot_frame
 
-        # 冷却帧 = max(5, int(0.3*30)) = 9 帧
-        # 第一次投篮发生在约 frame 18，冷却期到 frame 27
-        # 第二次投篮在 frame 21-27 之间（冷却期内），应被忽略
-        for i in range(4):
-            y = 120 + i * 20
-            sd.process_frame([(300, y)], [200.0], [0.8], frame_index=21 + i * 2)
+        # 模拟冷却期内的投篮尝试：手动设置 UP+DOWN 状态
+        # 冷却帧 = max(8, int(0.3*30)) = 9
+        cooldown_end = first_shot_frame + 9
+        # 在冷却期内喂几帧球位置使状态机进入 UP→DOWN
+        for i in range(5):
+            sd.process_frame([(300, 150)], [200.0], [0.8],
+                             frame_index=first_shot_frame + 2 + i)
+        sd._up = True
+        sd._up_frame = first_shot_frame + 3
+        sd._down = True
+        sd._down_frame = first_shot_frame + 5
+        # 触发检测 — 应被冷却期拦截
+        sd.process_frame([(300, 250)], [200.0], [0.8],
+                         frame_index=first_shot_frame + 6)
 
-        # 冷却期内第二次投篮不应被计数
-        assert sd.total_shots == shots_after_first
+        assert sd.total_shots == 1, "冷却期内不应检测到第二次投篮"
 
 
 class TestShotResult:

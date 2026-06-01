@@ -179,11 +179,8 @@ class ShotDetector:
     # ===================================================================
 
     def _detect_up(self) -> bool:
-        """UP 检测：放宽到 hoop_center ± 8*hoop_width
-
-        不再要求严格在窄区域内，只要球在篮筐大范围上方即可
-        """
-        if not self._ball_pos or not self._hoop_pos:
+        """UP 检测：球在篮筐上方 + 有上升运动"""
+        if len(self._ball_pos) < 3 or not self._hoop_pos:
             return False
 
         bx, by = self._ball_pos[-1][0], self._ball_pos[-1][1]
@@ -192,13 +189,18 @@ class ShotDetector:
         hw = self._hoop_pos[-1][3]
         hh = self._hoop_pos[-1][4]
 
-        # 收紧范围：x ± 3*hw，y 在篮筐上方
+        # 范围：x ± 3*hw，y 在篮筐上方
         x1 = hcx - 3 * hw
         x2 = hcx + 3 * hw
         y1 = hcy - 3 * hh
         y2 = hcy - 0.3 * hh
 
-        return x1 < bx < x2 and y1 < by < y2
+        if not (x1 < bx < x2 and y1 < by < y2):
+            return False
+
+        # 验证上升运动：最近 3 帧球的 Y 坐标应递减（屏幕坐标 Y 向下）
+        recent_y = [self._ball_pos[i][1] for i in range(-3, 0)]
+        return recent_y[0] > recent_y[1] > recent_y[2]
 
     def _detect_down(self) -> bool:
         """DOWN 检测：球在篮筐下方"""
@@ -388,6 +390,12 @@ class ShotDetector:
                 self._down = False
                 return None
 
+            # 弧线验证：UP→DOWN 之间必须有最高点
+            if not self._has_apex_between(self._up_frame, self._down_frame):
+                self._up = False
+                self._down = False
+                return None
+
             # 多方法投票 — 需要至少 1 种方法确认命中
             # UP→DOWN 确认投篮发生，但命中需要投票验证
             made = self._check_score()
@@ -429,6 +437,17 @@ class ShotDetector:
         ys = [p[1] for p in self._ball_pos[-20:]]
         min_idx = int(np.argmin(ys))
         return 2 <= min_idx <= len(ys) - 3
+
+    def _has_apex_between(self, up_frame: int, down_frame: int) -> bool:
+        """验证 UP→DOWN 之间轨迹有最高点（弧线）"""
+        segment = [p for p in self._ball_pos if up_frame <= p[2] <= down_frame]
+        if len(segment) < 3:
+            return False
+        ys = [p[1] for p in segment]
+        min_y = min(ys)
+        min_idx = ys.index(min_y)
+        # 最高点不在两端
+        return 1 <= min_idx <= len(ys) - 2
 
     def _compute_angles(self) -> tuple[float, float]:
         """计算入射角和出手角"""
