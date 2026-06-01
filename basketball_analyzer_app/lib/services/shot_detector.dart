@@ -141,7 +141,7 @@ class ShotDetector {
 
   // ===== UP/DOWN 状态机（对齐 Python） =====
 
-  /// UP 检测：球在篮筐上方 + 有上升运动
+  /// UP 检测：球在篮筐上方 + 有上升趋势（允许噪声抖动）
   bool _detectUp() {
     if (_ballPos.length < 3 || _hoopPos.isEmpty) return false;
 
@@ -159,11 +159,10 @@ class ShotDetector {
 
     if (!(x1 < bx && bx < x2 && y1 < by && by < y2)) return false;
 
-    // 验证上升运动：最近 3 帧球的 Y 坐标应递减（屏幕坐标 Y 向下）
-    final y0 = _ballPos[_ballPos.length - 3].$2;
-    final y1p = _ballPos[_ballPos.length - 2].$2;
-    final y2p = _ballPos[_ballPos.length - 1].$2;
-    return y0 > y1p && y1p > y2p;
+    // 上升趋势：当前 Y < 3帧前的 Y（允许中间抖动）
+    final yNow = _ballPos.last.$2;
+    final yAgo = _ballPos[_ballPos.length - 3].$2;
+    return yNow < yAgo;
   }
 
   /// DOWN 检测：球在篮筐下方
@@ -179,22 +178,25 @@ class ShotDetector {
 
   // ===== 3 方法投票命中检测（对齐 Python） =====
 
-  /// 多方法投票：任意 2 票确认命中
+  /// 命中判断 — 下降轨迹是否经过篮筐区域
+  /// UP→DOWN 已确认投篮发生，此方法判断是否命中
   bool _checkScore() {
-    if (_ballPos.length < 2 || _hoopPos.isEmpty) return false;
+    if (_ballPos.length < 3 || _hoopPos.isEmpty) return false;
 
     final hcx = _hoopPos.last.$1;
-    final hcy = _hoopPos.last.$2;
     final hw = _hoopPos.last.$4;
-    final hh = _hoopPos.last.$5;
 
-    int votes = 0;
-    if (_methodATrajectory(hcx, hcy, hw, hh)) votes++;
-    if (_methodBCrossing(hcx, hcy, hw, hh)) votes++;
-    if (_methodCProximityDown(hcx, hcy, hw, hh)) votes++;
+    // 找下降阶段的点（UP 帧之后）
+    final descentPts = _ballPos.where((p) => p.$3 >= _upFrame).toList();
+    if (descentPts.length < 2) return false;
 
-    // UP→DOWN 已确认投篮，1 票即可确认命中
-    return votes >= 1;
+    // 检查下降轨迹是否经过篮筐水平区域
+    final hoopZoneMin = hcx - 2 * hw;
+    final hoopZoneMax = hcx + 2 * hw;
+    final inZone = descentPts.where((p) => p.$1 > hoopZoneMin && p.$1 < hoopZoneMax).length;
+
+    // 只要有下降点经过篮筐水平区域 → 判定命中
+    return inZone > 0;
   }
 
   /// 方法 A: 抛物线轨迹预测 — 预测球在篮筐高度的 X 位置
@@ -371,13 +373,6 @@ class ShotDetector {
         (AppConfig.shot.cooldownFpsRatio * _fps).round(),
       );
       if (_frameCount - _lastShotFrame < cooldown) {
-        _up = false;
-        _down = false;
-        return null;
-      }
-
-      // 弧线验证：UP→DOWN 之间必须有最高点
-      if (!_hasApexBetween(_upFrame, _downFrame)) {
         _up = false;
         _down = false;
         return null;

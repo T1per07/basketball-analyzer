@@ -179,7 +179,7 @@ class ShotDetector:
     # ===================================================================
 
     def _detect_up(self) -> bool:
-        """UP 检测：球在篮筐上方 + 有上升运动"""
+        """UP 检测：球在篮筐上方 + 有上升趋势（允许噪声抖动）"""
         if len(self._ball_pos) < 3 or not self._hoop_pos:
             return False
 
@@ -198,9 +198,10 @@ class ShotDetector:
         if not (x1 < bx < x2 and y1 < by < y2):
             return False
 
-        # 验证上升运动：最近 3 帧球的 Y 坐标应递减（屏幕坐标 Y 向下）
-        recent_y = [self._ball_pos[i][1] for i in range(-3, 0)]
-        return recent_y[0] > recent_y[1] > recent_y[2]
+        # 上升趋势：当前 Y < 3帧前的 Y（允许中间抖动）
+        y_now = self._ball_pos[-1][1]
+        y_ago = self._ball_pos[-3][1]
+        return y_now < y_ago
 
     def _detect_down(self) -> bool:
         """DOWN 检测：球在篮筐下方"""
@@ -218,31 +219,36 @@ class ShotDetector:
     # ===================================================================
 
     def _check_score(self) -> bool:
-        """多方法投票命中检测
+        """命中判断 — 轨迹方向 + 篮筐区域通过
 
-        方法 A: 抛物线轨迹预测
-        方法 B: 篮筐区域穿越
-        方法 C: 球在篮筐附近 + 向下运动
+        UP→DOWN + 弧线验证已确认投篮发生。
+        此方法判断是否命中：球的下降轨迹是否经过篮筐区域。
         """
-        if len(self._ball_pos) < 2 or not self._hoop_pos:
+        if len(self._ball_pos) < 3 or not self._hoop_pos:
             return False
 
         hcx = self._hoop_pos[-1][0]
         hcy = self._hoop_pos[-1][1]
         hw = self._hoop_pos[-1][3]
-        hh = self._hoop_pos[-1][4]
 
-        votes = 0
+        # 找下降阶段的点（UP 帧之后）
+        up_frame = self._up_frame if self._up_frame > 0 else self._ball_pos[-1][2]
+        descent_pts = [p for p in self._ball_pos if p[2] >= up_frame]
 
-        if self._method_a_trajectory(hcx, hcy, hw, hh):
-            votes += 1
-        if self._method_b_crossing(hcx, hcy, hw, hh):
-            votes += 1
-        if self._method_c_proximity_down(hcx, hcy, hw, hh):
-            votes += 1
+        if len(descent_pts) < 2:
+            return False
 
-        # UP→DOWN 已确认投篮，1 票即可确认命中
-        return votes >= 1
+        # 检查下降轨迹是否经过篮筐水平区域（x 在 hcx ± 2*hw 内）
+        hoop_zone_x_min = hcx - 2 * hw
+        hoop_zone_x_max = hcx + 2 * hw
+
+        points_in_hoop_zone = [
+            p for p in descent_pts
+            if hoop_zone_x_min < p[0] < hoop_zone_x_max
+        ]
+
+        # 只要有下降点经过篮筐水平区域 → 判定命中
+        return len(points_in_hoop_zone) > 0
 
     def _method_a_trajectory(self, hcx, hcy, hw, hh) -> bool:
         """方法 A: 抛物线轨迹预测
@@ -386,12 +392,6 @@ class ShotDetector:
                 int(app_config.shot.cooldown_fps_ratio * self._fps),
             )
             if self._frame_count - self._last_shot_frame < cooldown:
-                self._up = False
-                self._down = False
-                return None
-
-            # 弧线验证：UP→DOWN 之间必须有最高点
-            if not self._has_apex_between(self._up_frame, self._down_frame):
                 self._up = False
                 self._down = False
                 return None
