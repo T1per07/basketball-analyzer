@@ -21,11 +21,35 @@ class AnalysisScreen extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.bar_chart, size: 64, color: AppColors.textDim.withAlpha(80)),
-            const SizedBox(height: 16),
-            Text(
+            Container(
+              width: 100,
+              height: 100,
+              decoration: BoxDecoration(
+                color: AppColors.textDim.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.bar_chart,
+                size: 48,
+                color: AppColors.textDim.withOpacity(0.5),
+              ),
+            ),
+            const SizedBox(height: 24),
+            const Text(
               '请先上传视频并完成分析',
-              style: TextStyle(fontSize: 16, color: AppColors.textDim),
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textDim,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '上传投篮视频，AI 将自动分析投篮数据',
+              style: TextStyle(
+                fontSize: 13,
+                color: AppColors.textDim.withOpacity(0.7),
+              ),
             ),
           ],
         ),
@@ -57,73 +81,111 @@ class AnalysisScreen extends StatelessWidget {
   Widget _buildTypeStats(AnalysisResult result) {
     final statsByType = result.getStatsByType();
     final typeLabels = {
-      'three_point': ('三分球', Icons.gps_fixed),
-      'mid_range': ('中距离', Icons.adjust),
-      'layup': ('上篮', Icons.directions_run),
-      'free_throw': ('罚球', Icons.flag),
-      'dunk': ('扣篮', Icons.sports_basketball),
+      'three_point': ('三分球', Icons.gps_fixed, const Color(0xFFFF6B2B)),
+      'mid_range': ('中距离', Icons.adjust, const Color(0xFFFF9800)),
+      'layup': ('上篮', Icons.directions_run, const Color(0xFF00E5FF)),
+      'free_throw': ('罚球', Icons.flag, const Color(0xFF39FF14)),
+      'dunk': ('扣篮', Icons.sports_basketball, const Color(0xFFFF3C3C)),
     };
 
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(12),
-      ),
+    return GlassCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            '按类型统计',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              color: AppColors.text,
-            ),
+          const SectionHeader(
+            tag: 'BREAKDOWN',
+            title: '按类型统计',
+            description: '不同投篮类型的命中率分析',
           ),
-          const SizedBox(height: 12),
           if (statsByType.isEmpty)
-            Text(
-              '暂无投篮数据',
-              style: TextStyle(color: AppColors.textDim, fontSize: 13),
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 24),
+                child: Text(
+                  '暂无投篮数据',
+                  style: TextStyle(
+                    color: AppColors.textDim.withOpacity(0.7),
+                    fontSize: 14,
+                  ),
+                ),
+              ),
             )
           else
             ...statsByType.entries.map((entry) {
               final label = typeLabels[entry.key]?.$1 ?? entry.key;
               final icon = typeLabels[entry.key]?.$2 ?? Icons.circle;
+              final color = typeLabels[entry.key]?.$3 ?? AppColors.primary;
               final data = entry.value;
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 6),
+              final percentage = data['percentage'] as double;
+
+              return Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.05),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: color.withOpacity(0.2),
+                    width: 1,
+                  ),
+                ),
                 child: Row(
                   children: [
-                    Icon(icon, size: 20, color: AppColors.primary),
-                    const SizedBox(width: 10),
-                    SizedBox(
-                      width: 60,
-                      child: Text(label,
-                          style: const TextStyle(
-                              fontSize: 13, color: AppColors.text)),
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: color.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Icon(icon, size: 20, color: color),
                     ),
+                    const SizedBox(width: 14),
                     Expanded(
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(4),
-                        child: LinearProgressIndicator(
-                          value: data['percentage'] as double,
-                          backgroundColor: AppColors.background,
-                          color: AppColors.primary,
-                          minHeight: 8,
-                        ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            label,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.text,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(4),
+                            child: LinearProgressIndicator(
+                              value: percentage,
+                              backgroundColor: AppColors.surface,
+                              color: color,
+                              minHeight: 6,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    SizedBox(
-                      width: 80,
-                      child: Text(
-                        '${data['made']}/${data['attempts']}  ${((data['percentage'] as double) * 100).round()}%',
-                        style: const TextStyle(
-                            fontSize: 12, color: AppColors.textDim),
-                        textAlign: TextAlign.right,
-                      ),
+                    const SizedBox(width: 14),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text(
+                          '${(percentage * 100).round()}%',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: color,
+                          ),
+                        ),
+                        Text(
+                          '${data['made']}/${data['attempts']}',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: AppColors.textDim,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -162,40 +224,68 @@ class AnalysisScreen extends StatelessWidget {
   }
 
   Widget _buildExportButtons(BuildContext context, AnalysisResult result) {
-    return Row(
-      children: [
-        Expanded(
-          child: OutlinedButton.icon(
-            onPressed: () => _exportExcel(context, result),
-            icon: const Icon(Icons.table_chart, size: 18),
-            label: const Text('导出 Excel'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: AppColors.secondary,
-              side: const BorderSide(color: AppColors.secondary),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-              padding: const EdgeInsets.symmetric(vertical: 12),
-            ),
+    return GlassCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SectionHeader(
+            tag: 'EXPORT',
+            title: '导出数据',
+            description: '将分析结果导出为 Excel 或 PDF 格式',
           ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: OutlinedButton.icon(
-            onPressed: () => _exportPdf(context, result),
-            icon: const Icon(Icons.picture_as_pdf, size: 18),
-            label: const Text('导出 PDF'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: AppColors.primary,
-              side: const BorderSide(color: AppColors.primary),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
+          Row(
+            children: [
+              Expanded(
+                child: AnimatedButton(
+                  onPressed: () => _exportExcel(context, result),
+                  color: AppColors.secondary,
+                  borderRadius: 12,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  child: const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.table_chart, size: 18, color: Colors.white),
+                      SizedBox(width: 8),
+                      Text(
+                        '导出 Excel',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
-              padding: const EdgeInsets.symmetric(vertical: 12),
-            ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: AnimatedButton(
+                  onPressed: () => _exportPdf(context, result),
+                  color: AppColors.primary,
+                  borderRadius: 12,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  child: const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.picture_as_pdf, size: 18, color: Colors.white),
+                      SizedBox(width: 8),
+                      Text(
+                        '导出 PDF',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 

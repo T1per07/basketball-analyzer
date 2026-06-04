@@ -6,6 +6,7 @@ import '../app.dart';
 import '../app_state.dart';
 import '../models/models.dart';
 import '../services/video_processor.dart';
+import '../widgets/widgets.dart';
 
 class UploadScreen extends StatefulWidget {
   const UploadScreen({super.key});
@@ -90,7 +91,7 @@ class _UploadScreenState extends State<UploadScreen> {
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
 
-    return Padding(
+    return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Column(
         children: [
@@ -98,53 +99,68 @@ class _UploadScreenState extends State<UploadScreen> {
           // 上传区域
           GestureDetector(
             onTap: appState.isAnalyzing ? null : _pickVideo,
-            child: Container(
-              width: double.infinity,
-              height: 200,
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: _videoPath != null
-                      ? AppColors.primary
-                      : AppColors.textDim.withAlpha(60),
-                  width: 2,
-                  style: BorderStyle.solid,
+            child: GlassCard(
+              padding: const EdgeInsets.symmetric(vertical: 40),
+              borderColor: _videoPath != null
+                  ? AppColors.primary.withOpacity(0.5)
+                  : null,
+              child: SizedBox(
+                width: double.infinity,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      width: 80,
+                      height: 80,
+                      decoration: BoxDecoration(
+                        color: _videoPath != null
+                            ? AppColors.success.withOpacity(0.2)
+                            : AppColors.primary.withOpacity(0.2),
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: (_videoPath != null
+                                    ? AppColors.success
+                                    : AppColors.primary)
+                                .withOpacity(0.3),
+                            blurRadius: 20,
+                            spreadRadius: -5,
+                          ),
+                        ],
+                      ),
+                      child: Icon(
+                        _videoPath != null
+                            ? Icons.check_circle
+                            : Icons.cloud_upload_outlined,
+                        size: 40,
+                        color: _videoPath != null
+                            ? AppColors.success
+                            : AppColors.primary,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    Text(
+                      _videoPath != null
+                          ? _videoPath!.split(Platform.pathSeparator).last
+                          : '选择视频文件',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                        color: _videoPath != null
+                            ? AppColors.text
+                            : AppColors.textDim,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '支持 MP4, MOV, AVI, WebM, MKV',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: AppColors.textDim.withOpacity(0.7),
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    _videoPath != null
-                        ? Icons.check_circle
-                        : Icons.cloud_upload_outlined,
-                    size: 48,
-                    color: _videoPath != null
-                        ? AppColors.success
-                        : AppColors.textDim,
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    _videoPath != null
-                        ? _videoPath!.split(Platform.pathSeparator).last
-                        : '选择视频文件',
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: _videoPath != null
-                          ? AppColors.text
-                          : AppColors.textDim,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '支持 MP4, MOV, AVI, WebM, MKV',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: AppColors.textDim.withAlpha(150),
-                    ),
-                  ),
-                ],
               ),
             ),
           ),
@@ -152,20 +168,40 @@ class _UploadScreenState extends State<UploadScreen> {
 
           // ONNX 模型开关
           if (_onnxAvailable)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(12),
-              ),
+            GlassCard(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: Row(
                 children: [
-                  const Icon(Icons.smart_toy, color: AppColors.secondary, size: 20),
-                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: AppColors.secondary.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.smart_toy,
+                        color: AppColors.secondary, size: 20),
+                  ),
+                  const SizedBox(width: 12),
                   const Expanded(
-                    child: Text(
-                      'AI 模型检测 (ONNX)',
-                      style: TextStyle(fontSize: 14, color: AppColors.text),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'AI 模型检测 (ONNX)',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.text,
+                          ),
+                        ),
+                        Text(
+                          '使用深度学习模型进行更准确的检测',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: AppColors.textDim,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                   Switch(
@@ -176,58 +212,94 @@ class _UploadScreenState extends State<UploadScreen> {
                 ],
               ),
             ),
-          if (_onnxAvailable) const SizedBox(height: 16),
+          if (_onnxAvailable) const SizedBox(height: 24),
 
           // 分析按钮
-          SizedBox(
-            width: double.infinity,
-            height: 48,
-            child: ElevatedButton(
-              onPressed: _videoPath != null && !appState.isAnalyzing
-                  ? _analyze
-                  : null,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              child: appState.isAnalyzing
-                  ? Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
+          GlowButton(
+            onPressed: _videoPath != null && !appState.isAnalyzing
+                ? _analyze
+                : null,
+            color: _videoPath != null && !appState.isAnalyzing
+                ? AppColors.primary
+                : AppColors.textMuted,
+            borderRadius: 12,
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            child: SizedBox(
+              width: double.infinity,
+              child: Center(
+                child: appState.isAnalyzing
+                    ? Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
                           ),
+                          const SizedBox(width: 12),
+                          Text(
+                            '分析中... ${(appState.progress * 100).round()}%',
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ],
+                      )
+                    : const Text(
+                        '开始分析',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
                         ),
-                        const SizedBox(width: 12),
-                        Text(
-                            '分析中... ${(appState.progress * 100).round()}%'),
-                      ],
-                    )
-                  : const Text(
-                      '开始分析',
-                      style:
-                          TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                    ),
+                      ),
+              ),
             ),
           ),
           const SizedBox(height: 16),
 
           // 进度条
           if (appState.isAnalyzing)
-            ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: LinearProgressIndicator(
-                value: appState.progress,
-                backgroundColor: AppColors.surface,
-                color: AppColors.primary,
-                minHeight: 6,
+            GlassCard(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        '分析进度',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: AppColors.textDim,
+                        ),
+                      ),
+                      Text(
+                        '${(appState.progress * 100).round()}%',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: LinearProgressIndicator(
+                      value: appState.progress,
+                      backgroundColor: AppColors.surface,
+                      color: AppColors.primary,
+                      minHeight: 6,
+                    ),
+                  ),
+                ],
               ),
             ),
 
@@ -235,22 +307,34 @@ class _UploadScreenState extends State<UploadScreen> {
           if (appState.error != null)
             Container(
               margin: const EdgeInsets.only(top: 16),
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: AppColors.error.withAlpha(30),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: AppColors.error.withAlpha(80)),
+                color: AppColors.error.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: AppColors.error.withOpacity(0.3),
+                  width: 1,
+                ),
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.info_outline,
-                      color: AppColors.error, size: 20),
-                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: AppColors.error.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.info_outline,
+                        color: AppColors.error, size: 20),
+                  ),
+                  const SizedBox(width: 12),
                   Expanded(
                     child: Text(
                       appState.error!,
                       style: const TextStyle(
-                          color: AppColors.error, fontSize: 13),
+                        color: AppColors.error,
+                        fontSize: 13,
+                      ),
                     ),
                   ),
                 ],
@@ -268,61 +352,85 @@ class _UploadScreenState extends State<UploadScreen> {
   }
 
   Widget _buildResultPreview(AnalysisResult result) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(12),
-      ),
+    return GlassCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            '分析完成',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: AppColors.secondary,
-            ),
-          ),
-          const SizedBox(height: 12),
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              _statItem('投篮', '${result.totalShots}'),
-              _statItem('命中', '${result.madeShots}'),
-              _statItem(
-                '命中率',
-                '${(result.overallPercentage * 100).round()}%',
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppColors.success.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.check_circle,
+                  color: AppColors.success,
+                  size: 20,
+                ),
               ),
-              _statItem(
-                '平均距离',
-                '${result.averageDistance.toStringAsFixed(1)}m',
+              const SizedBox(width: 12),
+              const Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '分析完成',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.text,
+                    ),
+                  ),
+                  Text(
+                    '点击 STATS 查看详细统计',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textDim,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          // 统计卡片
+          GridView.count(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            crossAxisCount: 2,
+            mainAxisSpacing: 12,
+            crossAxisSpacing: 12,
+            childAspectRatio: 1.5,
+            children: [
+              StatCard(
+                label: '总投篮',
+                value: '${result.totalShots}',
+                icon: Icons.sports_basketball,
+                color: AppColors.primary,
+              ),
+              StatCard(
+                label: '命中',
+                value: '${result.madeShots}',
+                icon: Icons.check_circle,
+                color: AppColors.success,
+              ),
+              StatCard(
+                label: '命中率',
+                value: '${(result.overallPercentage * 100).round()}%',
+                icon: Icons.percent,
+                color: AppColors.secondary,
+              ),
+              StatCard(
+                label: '平均距离',
+                value: '${result.averageDistance.toStringAsFixed(1)}m',
+                icon: Icons.straighten,
+                color: const Color(0xFFFF9800),
               ),
             ],
           ),
         ],
       ),
-    );
-  }
-
-  Widget _statItem(String label, String value) {
-    return Column(
-      children: [
-        Text(
-          value,
-          style: const TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.bold,
-            color: AppColors.primary,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          label,
-          style: const TextStyle(fontSize: 12, color: AppColors.textDim),
-        ),
-      ],
     );
   }
 }

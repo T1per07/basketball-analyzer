@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import '../app.dart';
 import '../services/video_processor.dart';
+import '../widgets/widgets.dart';
 
 /// 实时检测页面
 class LiveScreen extends StatefulWidget {
@@ -266,79 +267,117 @@ class _LiveScreenState extends State<LiveScreen> {
         children: [
           // 视频预览区域
           Expanded(
-            child: Container(
-              width: double.infinity,
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: _isStreaming
-                      ? AppColors.success.withAlpha(100)
-                      : AppColors.textDim.withAlpha(40),
-                  width: 2,
-                ),
+            child: GlassCard(
+              padding: EdgeInsets.zero,
+              borderColor: _isStreaming
+                  ? AppColors.success.withOpacity(0.5)
+                  : null,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: _buildCameraPreview(),
               ),
-              child: _buildCameraPreview(),
             ),
           ),
           const SizedBox(height: 16),
 
           // 摄像头选择
           if (_cameras.length > 1)
-            Row(
-              children: [
-                const Text(
-                  '摄像头:',
-                  style: TextStyle(color: AppColors.textDim, fontSize: 13),
-                ),
-                const SizedBox(width: 8),
-                ...List.generate(_cameras.length, (i) {
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: ChoiceChip(
-                      label: Text(_cameras[i].name),
-                      selected: _selectedCamera == i,
-                      onSelected: _isStreaming
-                          ? null
-                          : (v) {
-                              if (v) setState(() => _selectedCamera = i);
-                            },
-                      selectedColor: AppColors.primary.withAlpha(60),
-                      labelStyle: TextStyle(
-                        color: _selectedCamera == i
-                            ? AppColors.primary
-                            : AppColors.textDim,
-                        fontSize: 12,
-                      ),
-                      side: BorderSide(
-                        color: _selectedCamera == i
-                            ? AppColors.primary
-                            : AppColors.textDim.withAlpha(60),
-                      ),
-                      backgroundColor: AppColors.surface,
+            GlassCard(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Row(
+                children: [
+                  const Icon(Icons.videocam,
+                      color: AppColors.secondary, size: 20),
+                  const SizedBox(width: 12),
+                  const Text(
+                    '摄像头:',
+                    style: TextStyle(
+                      color: AppColors.textDim,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
                     ),
-                  );
-                }),
-              ],
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: List.generate(_cameras.length, (i) {
+                          return Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: ChoiceChip(
+                              label: Text(_cameras[i].name),
+                              selected: _selectedCamera == i,
+                              onSelected: _isStreaming
+                                  ? null
+                                  : (v) {
+                                      if (v) {
+                                        setState(() => _selectedCamera = i);
+                                      }
+                                    },
+                              selectedColor: AppColors.primary.withOpacity(0.3),
+                              labelStyle: TextStyle(
+                                color: _selectedCamera == i
+                                    ? AppColors.primary
+                                    : AppColors.textDim,
+                                fontSize: 12,
+                                fontWeight: _selectedCamera == i
+                                    ? FontWeight.w600
+                                    : FontWeight.normal,
+                              ),
+                              side: BorderSide(
+                                color: _selectedCamera == i
+                                    ? AppColors.primary.withOpacity(0.5)
+                                    : AppColors.textDim.withOpacity(0.3),
+                              ),
+                              backgroundColor: AppColors.surface,
+                            ),
+                          );
+                        }),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           const SizedBox(height: 12),
 
           // ONNX 模型开关
           if (_onnxAvailable && !_isStreaming)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(12),
-              ),
+            GlassCard(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: Row(
                 children: [
-                  const Icon(Icons.smart_toy, color: AppColors.secondary, size: 20),
-                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: AppColors.secondary.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.smart_toy,
+                        color: AppColors.secondary, size: 20),
+                  ),
+                  const SizedBox(width: 12),
                   const Expanded(
-                    child: Text(
-                      'AI 模型检测 (ONNX)',
-                      style: TextStyle(fontSize: 14, color: AppColors.text),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'AI 模型检测 (ONNX)',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.text,
+                          ),
+                        ),
+                        Text(
+                          '使用深度学习模型进行更准确的检测',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: AppColors.textDim,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                   Switch(
@@ -349,45 +388,64 @@ class _LiveScreenState extends State<LiveScreen> {
                 ],
               ),
             ),
-          if (_onnxAvailable && !_isStreaming) const SizedBox(height: 12),
+          if (_onnxAvailable && !_isStreaming) const SizedBox(height: 16),
 
           // 启动/停止按钮
-          SizedBox(
-            width: double.infinity,
-            height: 48,
-            child: ElevatedButton(
-              onPressed: _isInitializing
-                  ? null
-                  : (_isStreaming ? _stopStream : _startStream),
-              style: ElevatedButton.styleFrom(
-                backgroundColor:
-                    _isStreaming ? AppColors.error : AppColors.success,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              child: _isInitializing
-                  ? const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
+          GlowButton(
+            onPressed: _isInitializing
+                ? null
+                : (_isStreaming ? _stopStream : _startStream),
+            color: _isInitializing
+                ? AppColors.textMuted
+                : (_isStreaming ? AppColors.error : AppColors.success),
+            borderRadius: 12,
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            child: SizedBox(
+              width: double.infinity,
+              child: Center(
+                child: _isInitializing
+                    ? const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
                           ),
-                        ),
-                        SizedBox(width: 12),
-                        Text('正在启动摄像头...'),
-                      ],
-                    )
-                  : Text(
-                      _isStreaming ? '停止检测' : '启动实时检测',
-                      style: const TextStyle(
-                          fontSize: 16, fontWeight: FontWeight.w600),
-                    ),
+                          SizedBox(width: 12),
+                          Text(
+                            '正在启动摄像头...',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ],
+                      )
+                    : Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            _isStreaming ? Icons.stop : Icons.play_arrow,
+                            color: Colors.white,
+                            size: 24,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            _isStreaming ? '停止检测' : '启动实时检测',
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ],
+                      ),
+              ),
             ),
           ),
         ],
@@ -401,10 +459,29 @@ class _LiveScreenState extends State<LiveScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.error_outline, size: 48, color: AppColors.error),
-            const SizedBox(height: 12),
-            Text(_error!,
-                style: const TextStyle(color: AppColors.error, fontSize: 14)),
+            Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                color: AppColors.error.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.error_outline,
+                size: 40,
+                color: AppColors.error,
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              _error!,
+              style: const TextStyle(
+                color: AppColors.error,
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+              textAlign: TextAlign.center,
+            ),
           ],
         ),
       );
@@ -425,22 +502,34 @@ class _LiveScreenState extends State<LiveScreen> {
             top: 12,
             right: 12,
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               decoration: BoxDecoration(
-                color: AppColors.error.withAlpha(180),
-                borderRadius: BorderRadius.circular(4),
+                color: AppColors.error.withOpacity(0.9),
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.error.withOpacity(0.4),
+                    blurRadius: 8,
+                  ),
+                ],
               ),
               child: const Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.fiber_manual_record,
-                      size: 10, color: Colors.white),
-                  SizedBox(width: 4),
-                  Text('LIVE',
-                      style: TextStyle(
-                          fontSize: 10,
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold)),
+                  PulseIndicator(
+                    size: 8,
+                    color: Colors.white,
+                  ),
+                  SizedBox(width: 6),
+                  Text(
+                    'LIVE',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -449,12 +538,20 @@ class _LiveScreenState extends State<LiveScreen> {
           Positioned(
             bottom: 12,
             right: 12,
-            child: Text(
-              'Frame: $_frameIndex',
-              style: TextStyle(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.6),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                'Frame: $_frameIndex',
+                style: TextStyle(
                   fontSize: 10,
-                  color: Colors.white.withAlpha(150),
-                  fontFamily: 'monospace'),
+                  color: Colors.white.withOpacity(0.7),
+                  fontFamily: 'monospace',
+                ),
+              ),
             ),
           ),
         ],
@@ -465,12 +562,35 @@ class _LiveScreenState extends State<LiveScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.videocam_off,
-              size: 48, color: AppColors.textDim.withAlpha(100)),
-          const SizedBox(height: 12),
+          Container(
+            width: 80,
+            height: 80,
+            decoration: BoxDecoration(
+              color: AppColors.textDim.withOpacity(0.1),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              Icons.videocam_off,
+              size: 40,
+              color: AppColors.textDim.withOpacity(0.5),
+            ),
+          ),
+          const SizedBox(height: 20),
           const Text(
             '点击下方按钮启动实时检测',
-            style: TextStyle(color: AppColors.textDim, fontSize: 14),
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textDim,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '使用手机摄像头实时分析投篮',
+            style: TextStyle(
+              fontSize: 13,
+              color: AppColors.textDim.withOpacity(0.7),
+            ),
           ),
         ],
       ),
@@ -484,22 +604,37 @@ class _LiveScreenState extends State<LiveScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.desktop_windows,
-                size: 64, color: AppColors.textDim.withAlpha(80)),
-            const SizedBox(height: 16),
+            Container(
+              width: 100,
+              height: 100,
+              decoration: BoxDecoration(
+                color: AppColors.textDim.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.desktop_windows,
+                size: 48,
+                color: AppColors.textDim.withOpacity(0.5),
+              ),
+            ),
+            const SizedBox(height: 24),
             const Text(
               'Windows 暂不支持实时摄像头',
               style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.text),
+                fontSize: 20,
+                fontWeight: FontWeight.w600,
+                color: AppColors.text,
+              ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 12),
             Text(
               '请使用"上传"页面分析视频文件，\n或在 Android/iOS 设备上使用实时检测。',
               textAlign: TextAlign.center,
               style: TextStyle(
-                  fontSize: 14, color: AppColors.textDim.withAlpha(180)),
+                fontSize: 14,
+                color: AppColors.textDim.withOpacity(0.7),
+                height: 1.5,
+              ),
             ),
           ],
         ),
@@ -508,38 +643,66 @@ class _LiveScreenState extends State<LiveScreen> {
   }
 
   Widget _buildHud() {
-    return Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: Colors.black.withAlpha(160),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.secondary.withAlpha(60)),
-      ),
+    return GlassCard(
+      padding: const EdgeInsets.all(12),
+      blurAmount: 5,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'SHOT ANALYZER',
-            style: TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.bold,
-              color: AppColors.secondary,
-              letterSpacing: 1,
-            ),
+          Row(
+            children: [
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: AppColors.secondary,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.secondary.withOpacity(0.5),
+                      blurRadius: 6,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Text(
+                'SHOT ANALYZER',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.secondary,
+                  letterSpacing: 1,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 10),
           ..._liveStats.entries.map((e) => Padding(
-                padding: const EdgeInsets.symmetric(vertical: 1),
-                child: Text(
-                  '${e.key}: ${e.value}',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: e.key == '命中'
-                        ? AppColors.success
-                        : e.key == '投篮'
-                            ? AppColors.secondary
-                            : AppColors.text,
-                  ),
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: Row(
+                  children: [
+                    Text(
+                      '${e.key}:',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: AppColors.textDim.withOpacity(0.8),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      e.value,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: e.key == '命中'
+                            ? AppColors.success
+                            : e.key == '投篮'
+                                ? AppColors.secondary
+                                : AppColors.text,
+                      ),
+                    ),
+                  ],
                 ),
               )),
         ],

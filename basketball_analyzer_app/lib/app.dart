@@ -4,18 +4,24 @@ import 'app_state.dart';
 import 'screens/upload_screen.dart';
 import 'screens/analysis_screen.dart';
 import 'screens/live_screen.dart';
+import 'widgets/widgets.dart';
 
 /// 应用主题色
 class AppColors {
   static const primary = Color(0xFFFF6B2B);    // 橙色
+  static const primaryLight = Color(0xFFFF9800);
   static const secondary = Color(0xFF00E5FF);   // 青色
   static const surface = Color(0xFF1A1A2E);     // 深蓝黑
   static const surfaceLight = Color(0xFF16213E);
-  static const background = Color(0xFF0F0F23);
+  static const background = Color(0xFF0A0A1A);
+  static const backgroundDeep = Color(0xFF050510);
   static const text = Color(0xFFEAEAEA);
   static const textDim = Color(0xFF8892B0);
+  static const textMuted = Color(0xFF4A5568);
   static const success = Color(0xFF39FF14);
   static const error = Color(0xFFFF3C3C);
+  static const glass = Color(0x1A1A2EB3);
+  static const glassBorder = Color(0x0FFFFFFF);
 }
 
 class BasketballAnalyzerApp extends StatelessWidget {
@@ -63,21 +69,24 @@ class _MainNavigationState extends State<MainNavigation> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Column(
-        children: [
-          // 顶部导航栏
-          _buildHeader(),
-          // 页面内容
-          Expanded(
-            child: IndexedStack(
-              index: _currentIndex,
-              children: _screens,
+    return ParticleBackground(
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        body: Column(
+          children: [
+            // 顶部导航栏
+            _buildHeader(),
+            // 页面内容
+            Expanded(
+              child: IndexedStack(
+                index: _currentIndex,
+                children: _screens,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
+        bottomNavigationBar: _buildBottomNav(),
       ),
-      bottomNavigationBar: _buildBottomNav(),
     );
   }
 
@@ -90,38 +99,50 @@ class _MainNavigationState extends State<MainNavigation> {
         bottom: 8,
       ),
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: AppColors.surface.withOpacity(0.9),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withAlpha(80),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
+            color: Colors.black.withOpacity(0.3),
+            blurRadius: 20,
+            offset: const Offset(0, 4),
           ),
         ],
+        border: Border(
+          bottom: BorderSide(
+            color: Colors.white.withOpacity(0.06),
+            width: 1,
+          ),
+        ),
       ),
       child: Row(
         children: [
-          // Logo
+          // Logo with glow
           Container(
-            width: 36,
-            height: 36,
+            width: 40,
+            height: 40,
             decoration: BoxDecoration(
               gradient: const LinearGradient(
-                colors: [AppColors.primary, Color(0xFFFF9800)],
+                colors: [AppColors.primary, AppColors.primaryLight],
               ),
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(10),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.primary.withOpacity(0.4),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+              ],
             ),
             child: const Icon(Icons.sports_basketball,
-                color: Colors.white, size: 20),
+                color: Colors.white, size: 22),
           ),
           const SizedBox(width: 12),
-          const Text(
+          const GradientText(
             'BASANS',
             style: TextStyle(
-              fontSize: 18,
+              fontSize: 20,
               fontWeight: FontWeight.bold,
-              color: AppColors.secondary,
-              letterSpacing: 2,
+              letterSpacing: 3,
             ),
           ),
           const Spacer(),
@@ -138,16 +159,28 @@ class _MainNavigationState extends State<MainNavigation> {
               padding: const EdgeInsets.symmetric(horizontal: 4),
               child: GestureDetector(
                 onTap: () => setState(() => _currentIndex = i),
-                child: Container(
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
                   padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                   decoration: BoxDecoration(
                     color: isSelected
-                        ? AppColors.primary.withAlpha(40)
+                        ? AppColors.primary.withOpacity(0.2)
                         : Colors.transparent,
-                    borderRadius: BorderRadius.circular(6),
+                    borderRadius: BorderRadius.circular(8),
                     border: isSelected
-                        ? Border.all(color: AppColors.primary, width: 1)
+                        ? Border.all(
+                            color: AppColors.primary.withOpacity(0.5),
+                            width: 1)
+                        : null,
+                    boxShadow: isSelected
+                        ? [
+                            BoxShadow(
+                              color: AppColors.primary.withOpacity(0.2),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            ),
+                          ]
                         : null,
                   ),
                   child: Row(
@@ -158,7 +191,7 @@ class _MainNavigationState extends State<MainNavigation> {
                           color: isSelected
                               ? AppColors.primary
                               : AppColors.textDim),
-                      const SizedBox(width: 4),
+                      const SizedBox(width: 6),
                       Text(
                         labels[i],
                         style: TextStyle(
@@ -169,6 +202,7 @@ class _MainNavigationState extends State<MainNavigation> {
                           color: isSelected
                               ? AppColors.primary
                               : AppColors.textDim,
+                          letterSpacing: 1,
                         ),
                       ),
                     ],
@@ -185,14 +219,20 @@ class _MainNavigationState extends State<MainNavigation> {
   Widget _buildBottomNav() {
     return Container(
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: AppColors.surface.withOpacity(0.95),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withAlpha(80),
-            blurRadius: 8,
-            offset: const Offset(0, -2),
+            color: Colors.black.withOpacity(0.3),
+            blurRadius: 20,
+            offset: const Offset(0, -4),
           ),
         ],
+        border: Border(
+          top: BorderSide(
+            color: Colors.white.withOpacity(0.06),
+            width: 1,
+          ),
+        ),
       ),
       child: BottomNavigationBar(
         currentIndex: _currentIndex,
@@ -201,17 +241,28 @@ class _MainNavigationState extends State<MainNavigation> {
         elevation: 0,
         selectedItemColor: AppColors.primary,
         unselectedItemColor: AppColors.textDim,
+        selectedLabelStyle: const TextStyle(
+          fontWeight: FontWeight.w600,
+          fontSize: 12,
+        ),
+        unselectedLabelStyle: const TextStyle(
+          fontWeight: FontWeight.normal,
+          fontSize: 11,
+        ),
         items: const [
           BottomNavigationBarItem(
             icon: Icon(Icons.upload_file),
+            activeIcon: Icon(Icons.upload_file, size: 28),
             label: 'Upload',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.bar_chart),
+            activeIcon: Icon(Icons.bar_chart, size: 28),
             label: 'Stats',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.videocam),
+            activeIcon: Icon(Icons.videocam, size: 28),
             label: 'Live',
           ),
         ],
