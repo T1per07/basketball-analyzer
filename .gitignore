@@ -52,3 +52,7 @@ desktop.ini
 # Environment
 .env
 .env.local
+
+# Installer packages
+installer/*.zip
+installer/*.exe
